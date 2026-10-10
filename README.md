@@ -17,7 +17,7 @@
 - **Timeline**: bars on a time axis show what ran in parallel and for how long (`/flotilla timeline`, or press `t`).
 - **Status line**: `⠹ 3/5 agents · ≈$0.43` shows whenever the session has agents, whichever view you use.
 
-Works in the terminal and in the Claude Code tab of the desktop app. The interface labels are in French for now.
+Works in the terminal and in the Claude Code tab of the desktop app, in English or French.
 
 ## Install
 
@@ -52,6 +52,7 @@ Flotilla shows up on its own as soon as an agent starts. To change the view:
 | `/flotilla compact` | One line above the prompt |
 | `/flotilla timeline` / `/flotilla list` | Switch between timeline bars and rows |
 | `/flotilla clear` | Remove finished agents |
+| `/flotilla lang en` / `fr` / `auto` | Set the interface language |
 
 Buttons and their hotkeys work once the band or pane has focus:
 
@@ -66,6 +67,19 @@ Buttons and their hotkeys work once the band or pane has focus:
 | `c` | Clear finished agents (pane) |
 
 Closing the side pane by hand collapses Flotilla to its one-line view, so you don't lose track of your agents.
+
+## Language
+
+Flotilla speaks English and French. Its `language` option takes one of these values:
+
+- `auto` (default): follows Claude Code's own `language` setting, then your locale (`LC_ALL`, `LC_MESSAGES`, `LANG`). It falls back to English.
+- `en` or `fr`: forces that language.
+
+Set it with `/flotilla lang fr`, from the `/config` menu, or in `settings.json`:
+
+```json
+{ "pluginConfigs": { "flotilla": { "options": { "language": "fr" } } } }
+```
 
 ## About the cost estimate
 

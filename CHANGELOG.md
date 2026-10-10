@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 (2026-10-10)
+
+- English interface, alongside French
+- New `language` option: `auto` (default), `en` or `fr`. `auto` follows Claude Code's `language` setting, then the locale, and falls back to English
+- `/flotilla lang en|fr|auto` sets it from the prompt
+
 ## 1.0.0 (2026-10-10)
 
 First public release.

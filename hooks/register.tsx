@@ -63,6 +63,77 @@ function groupIcon(members: FleetAgent[], frame: number, now: number): { glyph: 
   return { glyph: '✓', color: 'success' }
 }
 
+// ---- Language -----------------------------------------------------------
+
+type Lang = 'en' | 'fr'
+
+const STRINGS = {
+  en: {
+    active: (n: number) => `${n} active`,
+    done: (n: number) => `${n} done`,
+    tools: (n: number) => `${n} tool${n === 1 ? '' : 's'}`,
+    toolCalls: (n: number) => `${n} tool call${n === 1 ? '' : 's'}`,
+    more: (n: number) => `+${n} more · /flotilla side to see all`,
+    idleFor: (d: string) => `⚠ no activity for ${d}`,
+    starting: 'starting…',
+    empty: 'No agents yet. They show up here as soon as one starts.',
+    ago: (d: string) => `${d} ago`,
+    now: 'now',
+    list: 'List',
+    timeline: 'Timeline',
+    pane: 'Side pane',
+    above: 'Above prompt',
+    collapse: 'Collapse',
+    expand: 'Expand',
+    hideDone: 'Hide done',
+    showDone: 'Show done',
+    clear: 'Clear',
+  },
+  fr: {
+    active: (n: number) => `${n} actif${n > 1 ? 's' : ''}`,
+    done: (n: number) => `${n} terminé${n > 1 ? 's' : ''}`,
+    tools: (n: number) => `${n} outil${n > 1 ? 's' : ''}`,
+    toolCalls: (n: number) => `${n} appel${n > 1 ? 's' : ''} d'outils`,
+    more: (n: number) => `+${n} autre${n > 1 ? 's' : ''} · /flotilla side pour tout voir`,
+    idleFor: (d: string) => `⚠ aucune activité depuis ${d}`,
+    starting: 'démarrage…',
+    empty: "Aucun agent en cours. Ils apparaissent ici dès qu'un agent démarre.",
+    ago: (d: string) => `il y a ${d}`,
+    now: 'maintenant',
+    list: 'Liste',
+    timeline: 'Chronologie',
+    pane: 'Panneau',
+    above: 'Au-dessus du prompt',
+    collapse: 'Réduire',
+    expand: 'Agrandir',
+    hideDone: 'Masquer terminés',
+    showDone: 'Afficher terminés',
+    clear: 'Vider',
+  },
+}
+
+// The words every drawing uses; set from the `language` option, or detected.
+let t: (typeof STRINGS)[Lang] = STRINGS.en
+
+const asLang = (value: unknown): Lang | undefined =>
+  typeof value !== 'string' ? undefined : /^(fr|french|fran[cç]ais)/i.test(value) ? 'fr' : /^(en|english)/i.test(value) ? 'en' : undefined
+
+// `auto`: Claude Code's own `language` setting, then the locale variables.
+async function detectLang($: EngineInterface): Promise<Lang> {
+  const settings = (await $.settings.read().catch(() => ({}))) as Record<string, unknown>
+  const fromSettings = asLang(settings.language)
+  if (fromSettings !== undefined) return fromSettings
+  const locale = (await $.env.get('LC_ALL').catch(() => undefined))
+    ?? (await $.env.get('LC_MESSAGES').catch(() => undefined))
+    ?? (await $.env.get('LANG').catch(() => undefined))
+
+  return asLang(locale) ?? 'en'
+}
+
+async function setLanguage($: EngineInterface, value: string) {
+  return $.config.set({ key: 'flotilla.language', value })
+}
+
 // ---- Formatting ---------------------------------------------------------
 
 function elapsed(ms: number): string {
@@ -74,7 +145,6 @@ function elapsed(ms: number): string {
 }
 
 const kilo = (n: number) => (n < 1000 ? String(n) : n < 1e6 ? `${(n / 1000).toFixed(1)}k` : `${(n / 1e6).toFixed(2)}M`)
-const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`
 
 function spark(activity: number[]): string {
   const bars = '▁▃▅▆█'
@@ -167,14 +237,14 @@ function totals(list: FleetAgent[]): { tokens: number; cost: string } {
 // ---- Rows ---------------------------------------------------------------
 
 function detail(a: FleetAgent, now: number): string {
-  if (isStuck(a, now)) return `⚠ aucune activité depuis ${elapsed(now - a.lastActivityAt)}`
+  if (isStuck(a, now)) return t.idleFor(elapsed(now - a.lastActivityAt))
   if (isLive(a.status)) {
     const running = a.inFlight > 0 && now - a.lastActivityAt > 10_000 ? ` (${elapsed(now - a.lastActivityAt)})` : ''
 
-    return `↳ ${a.tool ?? 'démarrage…'}${a.target ? ` ${a.target}` : ''}${running}`
+    return `↳ ${a.tool ?? t.starting}${a.target ? ` ${a.target}` : ''}${running}`
   }
   const cost = costOf(a)
-  const counts = `${plural(a.tools, 'outil')} · ${kilo(tokensOf(a.usage))} tokens${cost === undefined ? '' : ` · ${dollars(cost)}`}`
+  const counts = `${t.tools(a.tools)} · ${kilo(tokensOf(a.usage))} tokens${cost === undefined ? '' : ` · ${dollars(cost)}`}`
 
   return a.summary ? `${counts} — ${a.summary}` : counts
 }
@@ -378,13 +448,13 @@ function timelineRows($: EngineInterface, el: El, items: Item[], ctx: Ctx) {
       </Box>
     )
   })
-  const startLabel = `il y a ${elapsed(ctx.now - t0)}`
+  const startLabel = t.ago(elapsed(ctx.now - t0))
   const axis = (
     <Box key="tl-axis" flexDirection="row" gap={1}>
       <Box width={labelWidth}>
         <Text> </Text>
       </Box>
-      <Text dimColor>{startLabel.padEnd(Math.max(startLabel.length + 1, barWidth - 'maintenant'.length))}maintenant</Text>
+      <Text dimColor>{startLabel.padEnd(Math.max(startLabel.length + 1, barWidth - t.now.length))}{t.now}</Text>
     </Box>
   )
 
@@ -589,12 +659,19 @@ type FleetUsageInput = {
 
 // ---- Hooks --------------------------------------------------------------
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const chosen = asLang(options.language)
+  t = STRINGS[chosen ?? 'en']
+
   on('session.start', async ($, e, next) => {
+    if (chosen === undefined) {
+      t = STRINGS[await detectLang($)]
+      $.ui.invalidate('ui.render')
+    }
     await $.command.register({
       name: 'flotilla',
       description: 'Show running agents above the prompt, in the side pane (`side`) or on one line (`compact`)',
-      argumentHint: '[above | side | compact | timeline | clear]',
+      argumentHint: '[above | side | compact | timeline | list | clear | lang en|fr|auto]',
     })
     $.clock.every(TICK_MS, () => void tick($).catch(() => undefined))
     if ((await read($, view)) !== 'side') void $.ui.close({ id: PANE }).catch(() => undefined)
@@ -604,6 +681,12 @@ export const register: Register = on => {
 
   on('command.run', { command: 'flotilla' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    const lang = /^lang(?:uage)?\s+(en|fr|auto)$/.exec(arg)?.[1]
+    if (lang !== undefined) {
+      const { deny } = await setLanguage($, lang)
+
+      return { text: deny === undefined ? `Flotilla language set to ${lang}.` : `Couldn't set the language: ${deny}` }
+    }
     if (arg === 'clear') {
       await clearDone($)
 
@@ -694,29 +777,29 @@ export const register: Register = on => {
             <Text bold>{TITLE}</Text>
           </Box>
           <Text dimColor>
-            {plural(busy, 'actif')} · {plural(done, 'terminé')}
+            {t.active(busy)} · {t.done(done)}
           </Text>
         </Box>
         <Box flexDirection="column" marginY={1}>
           {items.length === 0 && (
-            <Text dimColor>Aucun agent en cours. Ils apparaissent ici dès qu'un agent démarre.</Text>
+            <Text dimColor>{t.empty}</Text>
           )}
           {items.length > 0 && (isTimeline ? timelineRows($, el, items, ctx) : listRows($, el, items, ctx, false))}
         </Box>
         <Text dimColor>
-          {kilo(tokens)} tokens{cost ? ` · ${cost}` : ''} · {plural(tools, "appel")} d'outils
+          {kilo(tokens)} tokens{cost ? ` · ${cost}` : ''} · {t.toolCalls(tools)}
         </Text>
         <Box flexDirection="row" gap={1} marginTop={1} flexWrap="wrap">
-          <Button key="layout" label={isTimeline ? 'Liste' : 'Chronologie'} hotkey="t" onPress={() => toggleLayout($)} />
-          <Button key="above" label="Au-dessus du prompt" hotkey="a" onPress={() => showIn($, 'above')} />
-          <Button key="collapse" label="Réduire" hotkey="r" onPress={() => showIn($, 'compact')} />
+          <Button key="layout" label={isTimeline ? t.list : t.timeline} hotkey="t" onPress={() => toggleLayout($)} />
+          <Button key="above" label={t.above} hotkey="a" onPress={() => showIn($, 'above')} />
+          <Button key="collapse" label={t.collapse} hotkey="r" onPress={() => showIn($, 'compact')} />
           <Button
             key="hide-done"
-            label={isHidingDone ? 'Afficher terminés' : 'Masquer terminés'}
+            label={isHidingDone ? t.showDone : t.hideDone}
             hotkey="h"
             onPress={() => update($, hideDone, v => !v)}
           />
-          <Button key="clear" label="Vider" hotkey="c" onPress={() => clearDone($)} />
+          <Button key="clear" label={t.clear} hotkey="c" onPress={() => clearDone($)} />
         </Box>
       </Box>
     )
@@ -756,23 +839,23 @@ export const register: Register = on => {
             <Box flexDirection="row" gap={2}>
               <Text color={busy > 0 ? 'claude' : 'success'} bold>{head}</Text>
               <Text dimColor>
-                {plural(done, 'terminé')} · {kilo(tokens)} tokens{cost ? ` · ${cost}` : ''}
+                {t.done(done)} · {kilo(tokens)} tokens{cost ? ` · ${cost}` : ''}
               </Text>
             </Box>
             <Box flexDirection="row" gap={1}>
-              <Button key="layout" label={isTimeline ? 'Liste' : 'Chronologie'} hotkey="t" onPress={() => toggleLayout($)} />
-              <Button key="side" label="Panneau" hotkey="p" onPress={() => showIn($, 'side')} />
-              <Button key="collapse" label="Réduire" hotkey="r" onPress={() => showIn($, 'compact')} />
+              <Button key="layout" label={isTimeline ? t.list : t.timeline} hotkey="t" onPress={() => toggleLayout($)} />
+              <Button key="side" label={t.pane} hotkey="p" onPress={() => showIn($, 'side')} />
+              <Button key="collapse" label={t.collapse} hotkey="r" onPress={() => showIn($, 'compact')} />
               <Button
                 key="hide-done"
-                label={isHidingDone ? 'Afficher terminés' : 'Masquer terminés'}
+                label={isHidingDone ? t.showDone : t.hideDone}
                 hotkey="h"
                 onPress={() => update($, hideDone, v => !v)}
               />
             </Box>
           </Box>
           {isTimeline ? timelineRows($, el, visible, ctx) : listRows($, el, visible, ctx, true)}
-          {hidden > 0 && <Text dimColor>  +{hidden} autre{hidden > 1 ? 's' : ''} · /flotilla side pour tout voir</Text>}
+          {hidden > 0 && <Text dimColor>  {t.more(hidden)}</Text>}
         </Box>
       )
     }
@@ -802,7 +885,7 @@ export const register: Register = on => {
           )
         })}
         {hidden > 0 && <Text dimColor>+{hidden}</Text>}
-        <Button key="expand" label="Agrandir" hotkey="e" onPress={() => showIn($, 'above')} />
+        <Button key="expand" label={t.expand} hotkey="e" onPress={() => showIn($, 'above')} />
       </Box>
     )
   })

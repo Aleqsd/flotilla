@@ -27,7 +27,7 @@ const SPAWN = {
 } as const
 
 describe('flotilla', () => {
-  test('a spawned agent shows in the pane, collapses to one line and expands above the prompt', async ($, on) => {
+  test('a spawned agent shows in the pane, collapses to one line and expands above the prompt', { options: { language: 'fr' } }, async ($, on) => {
     mock.clock(on)
     on('ui.open', () => ({ value: { isPlaced: true } }))
     on('ui.close', () => ({ value: undefined }))
@@ -57,7 +57,7 @@ describe('flotilla', () => {
     }
   })
 
-  test('a finished agent shows its answer and cost; a silent one is flagged', async ($, on) => {
+  test('a finished agent shows its answer and cost; a silent one is flagged', { options: { language: 'fr' } }, async ($, on) => {
     const clock = mock.clock(on)
     on('ui.open', () => ({ value: { isPlaced: true } }))
     on('ui.close', () => ({ value: undefined }))
@@ -94,7 +94,7 @@ describe('flotilla', () => {
     await pane.unmount()
   })
 
-  test('workflow agents group under one row that opens, and the timeline draws bars', async ($, on) => {
+  test('workflow agents group under one row that opens, and the timeline draws bars', { options: { language: 'fr' } }, async ($, on) => {
     mock.clock(on)
     on('ui.open', () => ({ value: { isPlaced: true } }))
     on('ui.close', () => ({ value: undefined }))
@@ -118,6 +118,35 @@ describe('flotilla', () => {
     await above.press({ key: 'layout' })
     expect(await above.find({ type: 'Text', text: /█/ })).toBeDefined()
     expect(await above.find({ type: 'Text', text: /maintenant$/ })).toBeDefined()
+    await above.unmount()
+  })
+
+  test('it speaks English when asked, and auto falls back to English', async ($, on) => {
+    mock.clock(on)
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('ui.close', () => ({ value: undefined }))
+    on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'agent-en' }))
+    await $.agent.spawn({ ...SPAWN, tool_use_id: 'toolu_en', description: 'Map the auth module', subagentType: 'Explore' })
+
+    const pane = await $.ui.mount({
+      plugin: 'flotilla', surface: 'terminal', component: 'Pane', requestId: 'flotilla', props: PANE_PROPS,
+    })
+    expect(await pane.find({ type: 'Text', text: /^1 active · 0 done$/ })).toBeDefined()
+    expect(await pane.find({ key: 'layout', text: 'Timeline' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /starting…/ })).toBeDefined()
+    await pane.unmount()
+  })
+
+  test('the language option picks the words', { options: { language: 'en' } }, async ($, on) => {
+    mock.clock(on)
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('ui.close', () => ({ value: undefined }))
+    on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'agent-en' }))
+    await $.agent.spawn({ ...SPAWN, tool_use_id: 'toolu_en', description: 'Map the auth module', subagentType: 'Explore' })
+
+    const above = await $.ui.mount({ plugin: 'flotilla', surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
+    expect(await above.find({ key: 'side', text: 'Side pane' })).toBeDefined()
+    expect(await above.find({ key: 'collapse', text: 'Collapse' })).toBeDefined()
     await above.unmount()
   })
 })

@@ -1,11 +1,34 @@
 {
   "name": "flotilla",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Your running subagents, live: above the prompt, in a side pane or on one line, with timeline, workflow groups, cost and stuck-agent alerts",
-  "author": { "name": "aleqsd", "url": "https://github.com/aleqsd" },
+  "author": {
+    "name": "aleqsd",
+    "url": "https://github.com/aleqsd"
+  },
   "homepage": "https://github.com/aleqsd/flotilla",
   "repository": "https://github.com/aleqsd/flotilla",
   "license": "MIT",
-  "keywords": ["agents", "subagents", "monitor", "dashboard", "workflow", "cost"],
+  "keywords": [
+    "agents",
+    "subagents",
+    "monitor",
+    "dashboard",
+    "workflow",
+    "cost"
+  ],
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Interface language: auto follows Claude Code's language setting, then your locale",
+      "default": "auto",
+      "options": [
+        "auto",
+        "en",
+        "fr"
+      ]
+    }
+  },
   "types": "./types/index.d.ts"
 }
