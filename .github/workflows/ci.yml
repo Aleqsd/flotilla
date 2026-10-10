@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Validate and test (Claude Code ${{ matrix.claude-code }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The version Flotilla was last verified on, and the newest release:
+        # the function-hook API is early access and moves between releases.
+        claude-code: ['2.1.293', 'latest']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Claude Code
+        run: npm install --global @anthropic-ai/claude-code@${{ matrix.claude-code }}
+
+      - name: Validate the manifest, marketplace and hooks module
+        run: claude plugin validate .
+
+      - name: Run the plugin's tests
+        run: claude plugin test .
