@@ -2,3 +2,6 @@
 .claude-plugin/types/
 tsconfig.json
 node_modules/
+
+# Local Claude Code settings for this checkout
+.claude/settings.local.json
