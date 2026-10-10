@@ -1,17 +1,22 @@
 import { atom, read, update } from 'claude-code'
-import type { AgentSpawnInput, AgentStatus, Color, ElementTable, EngineInterface, Register } from 'claude-code'
+import type { AgentSpawnInput, AgentStatus, EngineInterface, Register } from 'claude-code'
 
-import type { FleetAgent, FleetKind, FleetUsage, FleetView, FleetWorkflowName } from '../types'
+import type { FleetAgent, FleetKind, FleetView } from '../types'
+import { totals } from './cost'
+import { elapsed, kilo, oneLine, summarize, targetOf } from './format'
+import { headline, itemsOf, listRows, timelineRows } from './rows'
+import {
+  IDLE_HINT_MS, LINGER_MS, MAX_ROWS, PANE, patch, SPARK, SPINNER, TASK_TOOLS, TICK_MS, TITLE, ZERO,
+} from './state'
+import type { Ctx } from './state'
+import { icon, isBusy, isLive, isStuck, isTask } from './status'
+import { asLang, setLang, t } from './strings'
+import type { Lang } from './strings'
+import { notified } from './tasks'
+import type { Ended, InFlight } from './tasks'
 
-const PANE = 'flotilla'
-const TITLE = 'Flotilla'
-const SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-const TICK_MS = 250
-const SPARK = 12
-const LINGER_MS = 15_000
-const STUCK_MS = 60_000
-const MAX_ROWS = 80
-
+// The state the drawings read. The validator lists every `$.state` key a module
+// touches, so the atoms are declared here, in the module's own file.
 const fleet = atom({ plugin: 'flotilla', key: 'fleet' } as const, [])
 const view = atom({ plugin: 'flotilla', key: 'view' } as const, 'above')
 const layout = atom({ plugin: 'flotilla', key: 'layout' } as const, 'list')
@@ -20,115 +25,12 @@ const hideDone = atom({ plugin: 'flotilla', key: 'hideDone' } as const, false)
 const clock = atom({ plugin: 'flotilla', key: 'clock' } as const, { frame: 0, now: 0 })
 const workflowNames = atom({ plugin: 'flotilla', key: 'workflowNames' } as const, [])
 const openRuns = atom({ plugin: 'flotilla', key: 'openRuns' } as const, [])
+const idleHintUntil = atom({ plugin: 'flotilla', key: 'idleHintUntil' } as const, 0)
 
-type El = Pick<ElementTable, 'Box' | 'Text' | 'Button'>
-type Ctx = { frame: number; now: number; cols: number }
-type Group = { runId: string; name: string; members: FleetAgent[]; isOpen: boolean }
-type Item = { kind: 'agent'; agent: FleetAgent; depth: number } | ({ kind: 'group' } & Group)
-
-const ZERO: FleetUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-
-const TYPE_COLORS: Record<string, Color> = {
-  Explore: 'suggestion',
-  Plan: 'planMode',
-  'general-purpose': 'claude',
-  fork: 'merged',
-  teammate: 'autoAccept',
-  shell: 'bashBorder',
-  monitor: 'permission',
-}
-
-// Tools whose result names a background task, and the kind of task it is.
-const TASK_TOOLS: Record<string, Exclude<FleetKind, 'agent'>> = { Bash: 'shell', PowerShell: 'shell', Monitor: 'monitor' }
-
-// ---- Status -------------------------------------------------------------
-
-const isLive = (s: AgentStatus) =>
-  s === 'pending' || s === 'running' || s === 'waiting' || s === 'idle'
-const isBusy = (s: AgentStatus) => s === 'pending' || s === 'running'
-const isTask = (a: FleetAgent) => a.kind !== undefined && a.kind !== 'agent'
-const isStuck = (a: FleetAgent, now: number) =>
-  !isTask(a) && a.status === 'running' && a.inFlight === 0 && now - a.lastActivityAt > STUCK_MS
-
-function icon(a: FleetAgent, frame: number, now: number): { glyph: string; color: Color } {
-  if (isStuck(a, now)) return { glyph: '⚠', color: 'warning' }
-  if (isBusy(a.status)) return { glyph: SPINNER[(frame + a.tools) % SPINNER.length] ?? '•', color: 'claude' }
-  if (a.status === 'waiting' || a.status === 'idle') return { glyph: '◌', color: 'inactive' }
-  if (a.status === 'completed') return { glyph: '✓', color: 'success' }
-  if (a.status === 'failed') return { glyph: '✗', color: 'error' }
-
-  return { glyph: '■', color: 'warning' }
-}
-
-function groupIcon(members: FleetAgent[], frame: number, now: number): { glyph: string; color: Color } {
-  if (members.some(a => isStuck(a, now))) return { glyph: '⚠', color: 'warning' }
-  if (members.some(a => isBusy(a.status))) return { glyph: SPINNER[frame % SPINNER.length] ?? '•', color: 'claude' }
-  if (members.some(a => a.status === 'failed')) return { glyph: '✗', color: 'error' }
-  if (members.some(a => isLive(a.status))) return { glyph: '◌', color: 'inactive' }
-
-  return { glyph: '✓', color: 'success' }
-}
+// Every function that takes `$` lives in this file too: the validator follows `$`
+// only through functions declared here. The other modules are pure.
 
 // ---- Language -----------------------------------------------------------
-
-type Lang = 'en' | 'fr'
-
-const STRINGS = {
-  en: {
-    active: (n: number) => `${n} active`,
-    done: (n: number) => `${n} done`,
-    tools: (n: number) => `${n} tool${n === 1 ? '' : 's'}`,
-    toolCalls: (n: number) => `${n} tool call${n === 1 ? '' : 's'}`,
-    more: (n: number) => `+${n} more · /flotilla side to see all`,
-    idleFor: (d: string) => `⚠ no activity for ${d}`,
-    starting: 'starting…',
-    empty: 'No agents yet. They show up here as soon as one starts.',
-    ago: (d: string) => `${d} ago`,
-    now: 'now',
-    list: 'List',
-    timeline: 'Timeline',
-    pane: 'Side pane',
-    above: 'Above prompt',
-    collapse: 'Collapse',
-    expand: 'Expand',
-    hideDone: 'Hide done',
-    showDone: 'Show done',
-    clear: 'Clear',
-    noneRunning: 'Nothing is running right now. Flotilla shows up as soon as an agent or a background task starts.',
-    tasks: (n: number) => `${n} task${n === 1 ? '' : 's'}`,
-    ended: (status: string) => ({ completed: 'done', failed: 'failed', killed: 'stopped' })[status] ?? status,
-  },
-  fr: {
-    active: (n: number) => `${n} actif${n > 1 ? 's' : ''}`,
-    done: (n: number) => `${n} terminé${n > 1 ? 's' : ''}`,
-    tools: (n: number) => `${n} outil${n > 1 ? 's' : ''}`,
-    toolCalls: (n: number) => `${n} appel${n > 1 ? 's' : ''} d'outils`,
-    more: (n: number) => `+${n} autre${n > 1 ? 's' : ''} · /flotilla side pour tout voir`,
-    idleFor: (d: string) => `⚠ aucune activité depuis ${d}`,
-    starting: 'démarrage…',
-    empty: "Aucun agent en cours. Ils apparaissent ici dès qu'un agent démarre.",
-    ago: (d: string) => `il y a ${d}`,
-    now: 'maintenant',
-    list: 'Liste',
-    timeline: 'Chronologie',
-    pane: 'Panneau',
-    above: 'Au-dessus du prompt',
-    collapse: 'Réduire',
-    expand: 'Agrandir',
-    hideDone: 'Masquer terminés',
-    showDone: 'Afficher terminés',
-    clear: 'Vider',
-    noneRunning: "Rien ne tourne pour l'instant. Flotilla apparaît dès qu'un agent ou une tâche en arrière-plan démarre.",
-    tasks: (n: number) => `${n} tâche${n > 1 ? 's' : ''}`,
-    ended: (status: string) => ({ completed: 'terminée', failed: 'échouée', killed: 'arrêtée' })[status] ?? status,
-  },
-}
-
-// The words every drawing uses; set from the `language` option, or detected.
-let t: (typeof STRINGS)[Lang] = STRINGS.en
-
-const asLang = (value: unknown): Lang | undefined =>
-  typeof value !== 'string' ? undefined : /^(fr|french|fran[cç]ais)/i.test(value) ? 'fr' : /^(en|english)/i.test(value) ? 'en' : undefined
 
 // `auto`: Claude Code's own `language` setting, then the locale variables.
 async function detectLang($: EngineInterface): Promise<Lang> {
@@ -142,379 +44,25 @@ async function detectLang($: EngineInterface): Promise<Lang> {
   return asLang(locale) ?? 'en'
 }
 
-// Said after a view change while nothing is running, so an empty band isn't a mystery.
-async function quietNote($: EngineInterface) {
-  return (await read($, fleet)).some(a => isLive(a.status)) ? '' : `
-${t.noneRunning}`
-}
-
 async function setLanguage($: EngineInterface, value: string) {
   return $.config.set({ key: 'flotilla.language', value })
 }
 
-// ---- Formatting ---------------------------------------------------------
+// Said after a view change while nothing is running, so an empty band isn't a mystery;
+// the band shows its "nothing running" line for a moment too.
+async function quietNote($: EngineInterface) {
+  if ((await read($, fleet)).some(a => isLive(a.status))) return ''
+  await showIdleHint($)
 
-function elapsed(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000))
-  if (s < 60) return `${s}s`
-  if (s < 3600) return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}`
-
-  return `${Math.floor(s / 3600)}h${String(Math.floor(s / 60) % 60).padStart(2, '0')}`
+  return `\n${t.noneRunning}`
 }
 
-const kilo = (n: number) => (n < 1000 ? String(n) : n < 1e6 ? `${(n / 1000).toFixed(1)}k` : `${(n / 1e6).toFixed(2)}M`)
-
-function spark(activity: number[]): string {
-  const bars = '▁▃▅▆█'
-  const padded = [...Array(Math.max(0, SPARK - activity.length)).fill(0), ...activity.slice(-SPARK)]
-
-  return padded.map(v => bars[Math.min(bars.length - 1, v)]).join('')
+async function showIdleHint($: EngineInterface) {
+  const until = (await $.clock.now()) + IDLE_HINT_MS
+  await update($, idleHintUntil, () => until)
 }
 
-function progress(done: number, total: number, width = 8): string {
-  const filled = total === 0 ? 0 : Math.round((done / total) * width)
-
-  return '▰'.repeat(filled) + '▱'.repeat(width - filled)
-}
-
-// What a tool call works on, short enough for one row.
-function targetOf(input: unknown): string | undefined {
-  const fields = input as Record<string, unknown>
-  for (const key of ['file_path', 'path', 'pattern', 'command', 'url', 'query', 'description', 'skill']) {
-    const value = fields[key]
-    if (typeof value !== 'string' || value === '') continue
-    const flat = value.replace(/\s+/g, ' ').trim()
-    const isPath = /[\\/]/.test(flat) && !flat.includes(' ')
-    const short = isPath ? flat.split(/[\\/]/).slice(-2).join('/') : flat
-
-    return short.length > 60 ? `${short.slice(0, 59)}…` : short
-  }
-
-  return undefined
-}
-
-// The first sentence of a final answer, markdown stripped.
-function summarize(answer: string): string | undefined {
-  const flat = answer
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/^\s*(?:[-*>]|\d+\.)\s+/gm, '')
-    .replace(/[#*`_|]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (flat === '') return undefined
-  const sentence = /^(.{20,}?[.!?])(?:\s|$)/.exec(flat)?.[1] ?? flat
-
-  return sentence.length > 140 ? `${sentence.slice(0, 139)}…` : sentence
-}
-
-// ---- Models and cost ----------------------------------------------------
-
-// $ per million tokens; cache writes at the 5-minute rate (1.25x input).
-type Price = { input: number; output: number; cacheRead: number; cacheWrite: number }
-const price = (input: number, output: number, cacheRead: number): Price =>
-  ({ input, output, cacheRead, cacheWrite: input * 1.25 })
-const PRICES: [RegExp, Price][] = [
-  [/fable|mythos/, price(10, 50, 0.25)],
-  [/opus-5-5|^opus$/, price(4, 20, 0.2)],
-  [/opus/, price(5, 25, 0.5)],
-  [/sonnet-5|^sonnet$/, price(2, 10, 0.2)],
-  [/sonnet/, price(3, 15, 0.3)],
-  [/haiku-5|^haiku$/, price(0.1, 0.5, 0.01)],
-  [/haiku/, price(1, 5, 0.1)],
-]
-
-function costOf(a: FleetAgent): number | undefined {
-  const model = a.model?.toLowerCase()
-  const p = model === undefined ? undefined : PRICES.find(([re]) => re.test(model))?.[1]
-  if (p === undefined) return undefined
-  const u = a.usage
-
-  return (u.input * p.input + u.output * p.output + u.cacheRead * p.cacheRead + u.cacheWrite * p.cacheWrite) / 1e6
-}
-
-const tokensOf = (u: FleetUsage) => u.input + u.output + u.cacheRead + u.cacheWrite
-const family = (model?: string) => /fable|mythos|opus|sonnet|haiku/.exec(model?.toLowerCase() ?? '')?.[0]
-
-function dollars(n: number | undefined): string {
-  if (n === undefined) return ''
-  if (n === 0) return '$0'
-  if (n < 0.01) return '<$0.01'
-
-  return `$${n.toFixed(2)}`
-}
-
-function totals(all: FleetAgent[]): { tokens: number; cost: string } {
-  const list = all.filter(a => !isTask(a))
-  const costs = list.map(costOf)
-  const known = costs.filter((c): c is number => c !== undefined)
-  const sum = known.reduce((s, c) => s + c, 0)
-  const cost = known.length === 0 ? '' : `≈${dollars(sum)}${known.length < costs.length ? '+' : ''}`
-
-  return { tokens: list.reduce((s, a) => s + tokensOf(a.usage), 0), cost }
-}
-
-// ---- Rows ---------------------------------------------------------------
-
-function detail(a: FleetAgent, now: number): string {
-  if (isTask(a)) {
-    const what = a.target ?? a.description
-
-    return isLive(a.status) ? `$ ${what}` : `${t.ended(a.status)} · $ ${what}`
-  }
-  if (isStuck(a, now)) return t.idleFor(elapsed(now - a.lastActivityAt))
-  if (isLive(a.status)) {
-    const running = a.inFlight > 0 && now - a.lastActivityAt > 10_000 ? ` (${elapsed(now - a.lastActivityAt)})` : ''
-
-    return `↳ ${a.tool ?? t.starting}${a.target ? ` ${a.target}` : ''}${running}`
-  }
-  const cost = costOf(a)
-  const counts = `${t.tools(a.tools)} · ${kilo(tokensOf(a.usage))} tokens${cost === undefined ? '' : ` · ${dollars(cost)}`}`
-
-  return a.summary ? `${counts} — ${a.summary}` : counts
-}
-
-// Roots and workflow groups by start time, each followed by its children.
-function itemsOf(list: FleetAgent[], names: FleetWorkflowName[], open: string[]): Item[] {
-  const ids = new Set(list.map(a => a.id))
-  const byStart = [...list].sort((x, y) => x.startedAt - y.startedAt)
-  const isRoot = (a: FleetAgent) => a.parentId === undefined || !ids.has(a.parentId)
-  const runs = new Map<string, FleetAgent[]>()
-  const tops: { start: number; item: FleetAgent | string }[] = []
-  for (const a of byStart) {
-    if (!isRoot(a)) continue
-    if (a.workflowRun === undefined) {
-      tops.push({ start: a.startedAt, item: a })
-    } else if (runs.has(a.workflowRun)) {
-      runs.get(a.workflowRun)?.push(a)
-    } else {
-      runs.set(a.workflowRun, [a])
-      tops.push({ start: a.startedAt, item: a.workflowRun })
-    }
-  }
-
-  const out: Item[] = []
-  const walk = (a: FleetAgent, depth: number) => {
-    out.push({ kind: 'agent', agent: a, depth })
-    for (const child of byStart) if (child.parentId === a.id) walk(child, depth + 1)
-  }
-  for (const { item } of tops) {
-    if (typeof item !== 'string') {
-      walk(item, 0)
-      continue
-    }
-    const members = runs.get(item) ?? []
-    const call = members[0]?.workflowCall
-    const name = names.find(w => w.toolUseId === call)?.name ?? `workflow ${item.replace(/^wf_/, '').slice(0, 8)}`
-    const isOpen = open.includes(item)
-    out.push({ kind: 'group', runId: item, name, members, isOpen })
-    if (isOpen) for (const m of members) walk(m, 1)
-  }
-
-  return out
-}
-
-function groupFacts(g: Group, now: number) {
-  const done = g.members.filter(a => !isLive(a.status)).length
-  const start = Math.min(...g.members.map(a => a.startedAt))
-  const isAnyLive = g.members.some(a => isLive(a.status))
-  const end = isAnyLive ? now : Math.max(...g.members.map(a => a.endedAt ?? now))
-
-  return { done, total: g.members.length, start, end, ...totals(g.members) }
-}
-
-function groupRow($: EngineInterface, el: El, g: Group, ctx: Ctx) {
-  const { Box, Text, Button } = el
-  const mark = groupIcon(g.members, ctx.frame, ctx.now)
-  const f = groupFacts(g, ctx.now)
-
-  // Fixed parts never shrink: only the name gives way to a narrow column.
-  return (
-    <Box key={`wf-${g.runId}`} flexDirection="row" gap={1}>
-      <Box flexShrink={0} flexDirection="row" gap={1}>
-        <Button
-          key={`wf-${g.runId}`}
-          label={g.isOpen ? '▾' : '▸'}
-          plain
-          onPress={() => toggleRun($, g.runId)}
-        />
-        <Text color={mark.color}>{mark.glyph}</Text>
-        <Text color="merged" bold>workflow</Text>
-      </Box>
-      <Box flexGrow={1} flexShrink={1}>
-        <Text wrap="truncate-end">{g.name}</Text>
-      </Box>
-      <Box flexShrink={0} flexDirection="row" gap={1}>
-        <Text color={f.done === f.total ? 'success' : 'claude'}>{progress(f.done, f.total)}</Text>
-        <Text dimColor>
-          {f.done}/{f.total}{f.cost ? ` · ${f.cost}` : ''}
-        </Text>
-        <Box width={6} justifyContent="flex-end">
-          <Text dimColor>{elapsed(f.end - f.start)}</Text>
-        </Box>
-      </Box>
-    </Box>
-  )
-}
-
-// Two lines an agent: what it is, then what it does or what it found.
-function paneRow(el: El, a: FleetAgent, depth: number, ctx: Ctx) {
-  const { Box, Text } = el
-  const mark = icon(a, ctx.frame, ctx.now)
-  const live = isLive(a.status)
-  const indent = depth > 0 ? `${'   '.repeat(depth - 1)}└─ ` : ''
-  const model = family(a.model)
-
-  return (
-    <Box key={a.id} flexDirection="row" gap={1}>
-      <Box flexShrink={0}>
-        <Text color={mark.color}>{mark.glyph}</Text>
-      </Box>
-      <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-        <Box flexDirection="row" gap={1}>
-          <Box flexShrink={0} flexDirection="row" gap={1}>
-            {indent !== '' && <Text dimColor>{indent.trimEnd()}</Text>}
-            <Text color={TYPE_COLORS[a.type] ?? 'remember'} bold>{a.type}</Text>
-            {model !== undefined && <Text dimColor>{model}</Text>}
-          </Box>
-          <Box flexShrink={1}>
-            <Text dimColor={!live} wrap="truncate-end">{a.description}</Text>
-          </Box>
-        </Box>
-        <Text color={isStuck(a, ctx.now) ? 'warning' : undefined} dimColor={!isStuck(a, ctx.now)} wrap="truncate-end">
-          {' '.repeat(indent.length)}{detail(a, ctx.now)}
-        </Text>
-      </Box>
-      <Box flexShrink={0} flexDirection="row" gap={1}>
-        {ctx.cols >= 52 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{isTask(a) ? ' '.repeat(SPARK) : spark(a.activity)}</Text>}
-        <Box width={6} justifyContent="flex-end">
-          <Text dimColor>{elapsed((a.endedAt ?? ctx.now) - a.startedAt)}</Text>
-        </Box>
-      </Box>
-    </Box>
-  )
-}
-
-// One line an agent, for the band above the prompt.
-function lineRow(el: El, a: FleetAgent, depth: number, ctx: Ctx) {
-  const { Box, Text } = el
-  const mark = icon(a, ctx.frame, ctx.now)
-  const live = isLive(a.status)
-  const model = family(a.model)
-
-  return (
-    <Box key={a.id} flexDirection="row" gap={1}>
-      <Box flexShrink={0} flexDirection="row" gap={1}>
-        <Text color={mark.color}>{mark.glyph}</Text>
-        {depth > 0 && <Text dimColor>{`${'   '.repeat(depth - 1)}└─`}</Text>}
-        <Text color={TYPE_COLORS[a.type] ?? 'remember'} bold>{a.type}</Text>
-        {model !== undefined && <Text dimColor>{model}</Text>}
-      </Box>
-      <Box width={Math.max(12, Math.floor(ctx.cols * 0.28))} flexShrink={1}>
-        <Text dimColor={!live} wrap="truncate-end">{a.description}</Text>
-      </Box>
-      <Box flexGrow={1} flexShrink={1}>
-        <Text color={isStuck(a, ctx.now) ? 'warning' : undefined} dimColor={!isStuck(a, ctx.now)} wrap="truncate-end">
-          {detail(a, ctx.now)}
-        </Text>
-      </Box>
-      <Box flexShrink={0} flexDirection="row" gap={1}>
-        {ctx.cols >= 90 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{isTask(a) ? ' '.repeat(SPARK) : spark(a.activity)}</Text>}
-        <Box width={6} justifyContent="flex-end">
-          <Text dimColor>{elapsed((a.endedAt ?? ctx.now) - a.startedAt)}</Text>
-        </Box>
-      </Box>
-    </Box>
-  )
-}
-
-// A bar on the time axis for each agent or closed workflow.
-function timelineRows($: EngineInterface, el: El, items: Item[], ctx: Ctx) {
-  const { Box, Text, Button } = el
-  const spans = items.map(item =>
-    item.kind === 'agent'
-      ? { start: item.agent.startedAt, end: item.agent.endedAt ?? ctx.now }
-      : groupFacts(item, ctx.now),
-  )
-  const t0 = spans.length === 0 ? ctx.now : Math.min(...spans.map(s => s.start))
-  const t1 = Math.max(t0 + 1000, ...spans.map(s => s.end))
-  const labelWidth = Math.max(14, Math.min(30, Math.floor(ctx.cols * 0.35)))
-  const barWidth = Math.max(8, ctx.cols - labelWidth - 10)
-  const place = (start: number, end: number) => {
-    const from = Math.min(barWidth - 1, Math.floor(((start - t0) / (t1 - t0)) * barWidth))
-    const to = Math.min(barWidth, Math.max(from + 1, Math.ceil(((end - t0) / (t1 - t0)) * barWidth)))
-
-    return { pad: ' '.repeat(from), bar: to - from, rest: ' '.repeat(barWidth - to) }
-  }
-
-  const rows = items.map((item, i) => {
-    const span = spans[i] ?? { start: t0, end: t1 }
-    const { pad, bar, rest } = place(span.start, span.end)
-    if (item.kind === 'group') {
-      const mark = groupIcon(item.members, ctx.frame, ctx.now)
-
-      return (
-        <Box key={`tl-wf-${item.runId}`} flexDirection="row" gap={1}>
-          <Box width={labelWidth} flexDirection="row" gap={1}>
-            <Button key={`wf-${item.runId}`} label={item.isOpen ? '▾' : '▸'} plain onPress={() => toggleRun($, item.runId)} />
-            <Text color={mark.color}>{mark.glyph}</Text>
-            <Text color="merged" wrap="truncate-end">{item.name}</Text>
-          </Box>
-          <Text>{pad}</Text>
-          <Text color={mark.color}>{'▓'.repeat(bar)}</Text>
-          <Text>{rest}</Text>
-          <Box width={6} justifyContent="flex-end">
-            <Text dimColor>{elapsed(span.end - span.start)}</Text>
-          </Box>
-        </Box>
-      )
-    }
-    const a = item.agent
-    const mark = icon(a, ctx.frame, ctx.now)
-    const indent = item.depth > 0 ? `${' '.repeat(item.depth - 1)}└` : ''
-
-    return (
-      <Box key={`tl-${a.id}`} flexDirection="row" gap={1}>
-        <Box width={labelWidth} flexDirection="row" gap={1}>
-          <Text color={mark.color}>{indent}{mark.glyph}</Text>
-          <Text color={TYPE_COLORS[a.type] ?? 'remember'} bold>{a.type}</Text>
-          <Text dimColor={!isLive(a.status)} wrap="truncate-end">{a.description}</Text>
-        </Box>
-        <Text>{pad}</Text>
-        <Text color={mark.color}>{(isLive(a.status) ? '█' : '━').repeat(bar)}</Text>
-        <Text>{rest}</Text>
-        <Box width={6} justifyContent="flex-end">
-          <Text dimColor>{elapsed(span.end - span.start)}</Text>
-        </Box>
-      </Box>
-    )
-  })
-  const startLabel = t.ago(elapsed(ctx.now - t0))
-  const axis = (
-    <Box key="tl-axis" flexDirection="row" gap={1}>
-      <Box width={labelWidth}>
-        <Text> </Text>
-      </Box>
-      <Text dimColor>{startLabel.padEnd(Math.max(startLabel.length + 1, barWidth - t.now.length))}{t.now}</Text>
-    </Box>
-  )
-
-  return [...rows, axis]
-}
-
-function listRows($: EngineInterface, el: El, items: Item[], ctx: Ctx, isOneLine: boolean) {
-  return items.map(item =>
-    item.kind === 'group'
-      ? groupRow($, el, item, ctx)
-      : isOneLine
-        ? lineRow(el, item.agent, item.depth, ctx)
-        : paneRow(el, item.agent, item.depth, ctx),
-  )
-}
-
-// ---- Actions ------------------------------------------------------------
-
-const patch = (list: FleetAgent[], id: string, fn: (a: FleetAgent) => FleetAgent) =>
-  list.map(a => (a.id === id ? fn(a) : a))
+// ---- Views --------------------------------------------------------------
 
 async function openPane($: EngineInterface) {
   const opened = await $.ui.open({ id: PANE, title: TITLE })
@@ -538,6 +86,8 @@ async function toggleLayout($: EngineInterface) {
 async function clearDone($: EngineInterface) {
   await update($, fleet, list => list.filter(a => isLive(a.status)))
 }
+
+// ---- Agents -------------------------------------------------------------
 
 // Brings statuses in line with the engine's roster and picks up agents
 // started before this module loaded.
@@ -573,51 +123,6 @@ async function reconcile($: EngineInterface, now: number) {
 
     return next.slice(-MAX_ROWS)
   })
-}
-
-// `⠋ 2 agents · 1 task`: running agents, then running tasks when there are any.
-function headline(list: FleetAgent[], frame: number, withTotal: boolean): string {
-  const agents = list.filter(a => !isTask(a))
-  const busyAgents = agents.filter(a => isBusy(a.status)).length
-  const busyTasks = list.filter(a => isTask(a) && isBusy(a.status)).length
-  const glyph = busyAgents + busyTasks > 0 ? SPINNER[frame % SPINNER.length] : '✓'
-  const count = withTotal ? `${busyAgents}/${agents.length}` : String(busyAgents)
-  const agentPart = `${count} agent${(withTotal ? agents.length : busyAgents) > 1 ? 's' : ''}`
-  const parts = [
-    ...(agents.length > 0 || busyTasks === 0 ? [agentPart] : []),
-    ...(busyTasks > 0 ? [t.tasks(busyTasks)] : []),
-  ]
-
-  return `${glyph} ${parts.join(' · ')}`
-}
-
-let ticks = 0
-let lastStatus: string | undefined
-
-async function tick($: EngineInterface) {
-  ticks += 1
-  const now = await $.clock.now()
-  if (ticks % 8 === 1) await reconcile($, now)
-
-  const list = await read($, fleet)
-  const { cost } = totals(list)
-  const { frame } = await read($, clock)
-  const status = list.length === 0 ? undefined : `${headline(list, frame, true)}${cost ? ` · ${cost}` : ''}`
-  if (status !== lastStatus) {
-    lastStatus = status
-    $.ui.status(status)
-  }
-
-  const isAnyLive = list.some(a => isLive(a.status))
-  const isLingering = list.some(a => a.endedAt !== undefined && now - a.endedAt < LINGER_MS)
-  if (!isAnyLive && !isLingering) return
-
-  if (ticks % 4 === 0 && isAnyLive) {
-    await update($, fleet, all =>
-      all.map(a => (isLive(a.status) ? { ...a, activity: [...a.activity, 0].slice(-SPARK) } : a)),
-    )
-  }
-  await update($, clock, c => ({ frame: c.frame + 1, now }))
 }
 
 async function track($: EngineInterface, e: AgentSpawnInput, agentId: string, model: string) {
@@ -677,7 +182,15 @@ async function noteWorkflow($: EngineInterface, toolUseId: string, input: unknow
   await update($, workflowNames, names => [...names.filter(w => w.toolUseId !== toolUseId), { toolUseId, name }].slice(-20))
 }
 
-async function finished($: EngineInterface, agentId: string, e: { answer: string; isAborted: boolean; reason: string; usage?: FleetUsageInput }) {
+type UsageInput = {
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cache_read_input_tokens: number
+  cache_creation_input_tokens: number
+}
+
+async function finished($: EngineInterface, agentId: string, e: { answer: string; isAborted: boolean; reason: string; usage?: UsageInput }) {
   const now = await $.clock.now()
   const u = e.usage
   const status: AgentStatus = e.isAborted ? 'killed' : e.reason === 'error' ? 'failed' : 'completed'
@@ -702,21 +215,7 @@ async function finished($: EngineInterface, agentId: string, e: { answer: string
   )
 }
 
-type FleetUsageInput = {
-  model: string
-  input_tokens: number
-  output_tokens: number
-  cache_read_input_tokens: number
-  cache_creation_input_tokens: number
-}
-
 // ---- Background tasks ---------------------------------------------------
-
-const oneLine = (text: string) => {
-  const flat = text.replace(/\s+/g, ' ').trim()
-
-  return flat.length > 80 ? `${flat.slice(0, 79)}…` : flat
-}
 
 async function taskStarted($: EngineInterface, kind: Exclude<FleetKind, 'agent'>, input: unknown, output: unknown, parentId: string | undefined) {
   const out = (output ?? {}) as Record<string, unknown>
@@ -737,7 +236,7 @@ async function taskStarted($: EngineInterface, kind: Exclude<FleetKind, 'agent'>
   await update($, clock, c => ({ frame: c.frame, now }))
 }
 
-async function tasksEnded($: EngineInterface, ended: { id: string; status: AgentStatus }[]) {
+async function tasksEnded($: EngineInterface, ended: Ended[]) {
   if (ended.length === 0) return
   const now = await $.clock.now()
   await update($, fleet, list => list.map(a => {
@@ -747,25 +246,8 @@ async function tasksEnded($: EngineInterface, ended: { id: string; status: Agent
   }))
 }
 
-// A task notification names its task and how it ended:
-// <task-id>…</task-id> … <status>completed|failed|killed</status>.
-function notified(text: string): { id: string; status: AgentStatus }[] {
-  const out: { id: string; status: AgentStatus }[] = []
-  for (const block of text.split(/<\/task-notification>/)) {
-    const id = /<task-id>\s*([^<\s]+)\s*<\/task-id>/.exec(block)?.[1]
-    if (id === undefined) continue
-    const word = /<status>\s*([a-z_]+)\s*<\/status>/i.exec(block)?.[1]?.toLowerCase() ?? 'completed'
-    const status: AgentStatus = word === 'failed' || word === 'error' ? 'failed' : word === 'killed' || word === 'stopped' ? 'killed' : 'completed'
-    out.push({ id, status })
-  }
-
-  return out
-}
-
-type InFlight = { id: string; type: string; status: string; description: string; command?: string }
-
 // At each turn's end the engine lists the background work still in flight:
-// tracked tasks missing from it have ended; shells and monitors we never saw start are added.
+// tracked tasks missing from it have ended; shells and monitors never seen starting are added.
 async function syncTasks($: EngineInterface, inFlight: readonly InFlight[]) {
   const now = await $.clock.now()
   const ids = new Set(inFlight.map(x => x.id))
@@ -788,15 +270,54 @@ async function syncTasks($: EngineInterface, inFlight: readonly InFlight[]) {
   })
 }
 
+// ---- Clock --------------------------------------------------------------
+
+let ticks = 0
+let lastStatus: string | undefined
+
+// Four frames a second while something is busy (the spinners), one a second
+// while rows only wait or linger, none when nothing is left to draw. The
+// status line carries a still dot, so it changes only when the counts do.
+async function tick($: EngineInterface) {
+  ticks += 1
+  const list = await read($, fleet)
+  const isAnyLive = list.some(a => isLive(a.status))
+  const isAnyBusy = list.some(a => isBusy(a.status))
+  if (ticks % (isAnyLive ? 8 : 40) === 1) await reconcile($, await $.clock.now())
+
+  const hintUntil = await read($, idleHintUntil)
+  if (hintUntil !== 0 && (await $.clock.now()) >= hintUntil) await update($, idleHintUntil, () => 0)
+
+  const { cost } = totals(list)
+  const status = list.length === 0 ? undefined : `${headline(list, undefined, true)}${cost ? ` · ${cost}` : ''}`
+  if (status !== lastStatus) {
+    lastStatus = status
+    $.ui.status(status)
+  }
+
+  const now = await $.clock.now()
+  const isLingering = list.some(a => a.endedAt !== undefined && now - a.endedAt < LINGER_MS + 1000)
+  if (!isAnyLive && !isLingering) return
+  const isSecond = ticks % 4 === 0
+  if (!isAnyBusy && !isSecond) return
+
+  if (isSecond && isAnyBusy) {
+    await update($, fleet, all =>
+      all.map(a => (isLive(a.status) && !isTask(a) ? { ...a, activity: [...a.activity, 0].slice(-SPARK) } : a)),
+    )
+  }
+  await update($, clock, c => ({ frame: c.frame + 1, now }))
+}
+
 // ---- Hooks --------------------------------------------------------------
 
 export const register: Register = (on, options) => {
   const chosen = asLang(options.language)
-  t = STRINGS[chosen ?? 'en']
+  setLang(chosen ?? 'en')
 
   on('session.start', async ($, e, next) => {
     if (chosen === undefined) {
-      t = STRINGS[await detectLang($)]
+      setLang(await detectLang($))
       $.ui.invalidate('ui.render')
     }
     await $.command.register({
@@ -805,6 +326,7 @@ export const register: Register = (on, options) => {
       argumentHint: '[above | side | compact | timeline | list | clear | lang en|fr|auto]',
     })
     $.clock.every(TICK_MS, () => void tick($).catch(() => undefined))
+    void showIdleHint($).catch(() => undefined)
     if ((await read($, view)) !== 'side') void $.ui.close({ id: PANE }).catch(() => undefined)
 
     return next(e)
@@ -917,6 +439,7 @@ export const register: Register = (on, options) => {
     const ctx: Ctx = { frame, now, cols: e.props.bodyColumns }
     const shown = isHidingDone ? all.filter(a => isLive(a.status)) : all
     const items = itemsOf(shown, await read($, workflowNames), await read($, openRuns))
+    const onToggle = (runId: string) => void toggleRun($, runId)
     const busy = all.filter(a => isBusy(a.status)).length
     const done = all.filter(a => !isLive(a.status)).length
     const tools = all.reduce((sum, a) => sum + a.tools, 0)
@@ -937,7 +460,7 @@ export const register: Register = (on, options) => {
           {items.length === 0 && (
             <Text dimColor>{t.empty}</Text>
           )}
-          {items.length > 0 && (isTimeline ? timelineRows($, el, items, ctx) : listRows($, el, items, ctx, false))}
+          {items.length > 0 && (isTimeline ? timelineRows(el, items, ctx, onToggle) : listRows(el, items, ctx, false, onToggle))}
         </Box>
         <Text dimColor>
           {kilo(tokens)} tokens{cost ? ` · ${cost}` : ''} · {t.toolCalls(tools)}
@@ -969,12 +492,18 @@ export const register: Register = (on, options) => {
     const shown = (await read($, fleet)).filter(
       a => isLive(a.status) || (!isHidingDone && a.endedAt !== undefined && now - a.endedAt < LINGER_MS),
     )
-    if (shown.length === 0) return next(e)
+    if (shown.length === 0) {
+      if (now >= (await read($, idleHintUntil))) return next(e)
+      const { Text } = $.ui.resolve(e)
+
+      return <Text dimColor>{t.idleLine}</Text>
+    }
 
     const el = $.ui.resolve(e)
     const { Box, Text, Button } = el
     const busy = shown.filter(a => isBusy(a.status)).length
     const head = headline(shown, frame, false)
+    const onToggle = (runId: string) => void toggleRun($, runId)
 
     if (where === 'above') {
       const ctx: Ctx = { frame, now, cols: e.props.bodyColumns }
@@ -1007,7 +536,7 @@ export const register: Register = (on, options) => {
               />
             </Box>
           </Box>
-          {isTimeline ? timelineRows($, el, visible, ctx) : listRows($, el, visible, ctx, true)}
+          {isTimeline ? timelineRows(el, visible, ctx, onToggle) : listRows(el, visible, ctx, true, onToggle)}
           {hidden > 0 && <Text dimColor>  {t.more(hidden)}</Text>}
         </Box>
       )

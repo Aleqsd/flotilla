@@ -56,6 +56,8 @@ declare module 'claude-code' {
       clock: FleetClock
       workflowNames: FleetWorkflowName[]
       openRuns: string[]
+      /** Until when the band shows the "nothing running" line (ms since epoch; 0 for never). */
+      idleHintUntil: number
     }
   }
 }

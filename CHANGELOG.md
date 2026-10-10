@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 (2026-10-10)
+
+- For a few seconds after a session starts or after `/flotilla`, the band says "Flotilla is on · nothing running" when nothing runs, so you can see that it's loaded
+- Task notifications: the parser is checked against notifications captured from real Claude Code runs, and a non-zero exit code counts as failed
+- Lighter clock: 4 frames a second only while something is busy, 1 while rows wait or linger, none when nothing is left to draw; the status line uses a still dot and changes only when the counts do; the agent roster is polled every 10 s when nothing runs
+- The code is split into pure modules (`state`, `strings`, `status`, `format`, `cost`, `rows`, `tasks`) around `register.tsx`
+
 ## 1.2.0 (2026-10-10)
 
 - Background tasks show up next to the agents: background shell commands (`Bash`/`PowerShell`, Ctrl+B included) and `Monitor` watches, with their command and running time

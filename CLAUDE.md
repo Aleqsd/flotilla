@@ -4,7 +4,8 @@ A Claude Code mod (a plugin of function hooks) that shows running subagents and 
 
 ## Layout
 
-- `hooks/register.tsx`: the whole mod. State lives in `$.state` atoms (`fleet`, `view`, `layout`, …), and render hooks draw the `AbovePrompt` band and the `Pane`.
+- `hooks/register.tsx`: the hooks, the `$.state` atoms, and every function that takes `$` (bookkeeping for agents and tasks, the clock, view changes). The render hooks draw the `AbovePrompt` band and the `Pane`.
+- Pure modules, with no `$`: `state.ts` (constants, shared types, colors), `strings.ts` (`STRINGS`, `t`, `setLang`), `status.ts` (`isLive`, `isStuck`, icons), `format.ts` (durations, sparkline, summaries), `cost.ts` (`PRICES`, totals), `rows.tsx` (row drawing; buttons get callbacks, never `$`), `tasks.ts` (the task-notification parser).
 - `types/index.d.ts`: the `$.state` contract. Every key the module reads or writes must be declared here, self-contained, with no imports.
 - `hooks/flotilla.test.ts`: tests run with `claude plugin test`. The kit needs a bottom for each event the plugin passes on: `mock.clock(on)`, `ui.open`, `ui.close`, `turn.complete`, `classic.Stop`, `tool.call`.
 - `.claude-plugin/plugin.json` (manifest, `userConfig.language`) and `.claude-plugin/marketplace.json` (marketplace `aleqs-mods`, source `./`).
@@ -25,7 +26,8 @@ The type-check needs the API declarations. The engine writes them to `.claude-pl
 
 ## Rules the validator enforces
 
-- Any function that takes `$` must be declared at the top level of the file, not inside `register`.
+- Any function that takes `$` must be declared at the top level of `register.tsx`, not inside `register`, and not in another module.
+- `atom(...)` refs must be consts in `register.tsx`: the scan only reads atoms declared in the module's own file.
 - Hooks that can gate (`tool.call`, `agent.spawn`, `prompt.submit`, `classic.Stop`, `ui.close`) end with `.catch(($, e, next) => next(e))`, so Flotilla fails open and never blocks the session.
 - Render hooks never write state; writes happen in handlers or other events.
 

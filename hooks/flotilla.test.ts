@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
+import { notified } from './tasks'
+
 const PANE_PROPS = {
   title: 'Flotilla',
   isFocused: false,
@@ -188,6 +190,58 @@ describe('flotilla', () => {
     expect(await pane.find({ type: 'Text', text: /^Watch the deploy$/ })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: /^\$ kubectl rollout status$/ })).toBeDefined()
     await pane.unmount()
+  })
+
+  test('task notifications are read as Claude Code writes them', async () => {
+    // Both captured from real background commands in Claude Code 2.1.293.
+    const ok = [
+      '<task-notification>',
+      '<task-id>bkfcwbcvq</task-id>',
+      '<tool-use-id>toolu_013SToGv3dnvSGUCdwVigVbX</tool-use-id>',
+      '<output-file>C:\Temp\tasks\bkfcwbcvq.output</output-file>',
+      '<status>completed</status>',
+      '<summary>Background command "Wait for the CI run to finish" completed (exit code 0)</summary>',
+      '</task-notification>',
+    ].join('\n')
+    const failed = [
+      '<task-notification>',
+      '<task-id>bcduz1ph2</task-id>',
+      '<tool-use-id>toolu_01QX5erS8X816QgatUf6aoX8</tool-use-id>',
+      '<output-file>C:\Temp\tasks\bcduz1ph2.output</output-file>',
+      '<status>failed</status>',
+      '<summary>Background command "Run a failing background command" failed with exit code 3</summary>',
+      '</task-notification>',
+    ].join('\n')
+
+    expect(notified(ok)).toEqual([{ id: 'bkfcwbcvq', status: 'completed' }])
+    expect(notified(failed)).toEqual([{ id: 'bcduz1ph2', status: 'failed' }])
+    expect(notified(`${ok}\n${failed}`)).toEqual([
+      { id: 'bkfcwbcvq', status: 'completed' },
+      { id: 'bcduz1ph2', status: 'failed' },
+    ])
+    expect(notified('no notification here')).toEqual([])
+  })
+
+  test('/flotilla says when nothing runs, and the band shows it for a moment', { options: { language: 'en' } }, async ($, on) => {
+    const clock = mock.clock(on)
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('ui.close', () => ({ value: undefined }))
+    // Stands for the engine's own band, drawn once Flotilla passes it on.
+    on('ui.render', (_, e) => _.ui.resolve(e).Text({ children: 'engine band' }))
+    const reply = await $.command.run({
+      command: 'flotilla', args: '', origin: { kind: 'composer' },
+      presentation: { isFullscreen: false, columns: 120 },
+    })
+    expect(JSON.stringify(reply)).toContain('Nothing is running right now')
+
+    const band = await $.ui.mount({ plugin: 'flotilla', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    expect(await band.find({ type: 'Text', text: 'Flotilla is on · nothing running' })).toBeDefined()
+    await band.unmount()
+
+    await clock.advance(9_000)
+    const later = await $.ui.mount({ plugin: 'flotilla', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    expect(await later.find({ type: 'Text', text: 'Flotilla is on · nothing running' })).toBeUndefined()
+    await later.unmount()
   })
 })
 

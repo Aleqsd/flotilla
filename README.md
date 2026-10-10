@@ -16,7 +16,8 @@
 - **Model and cost**: a `haiku` / `sonnet` / `opus` / `fable` badge per agent, plus an estimated cost per agent and in total.
 - **Workflow groups**: agents started by one workflow collapse into a single row with a progress bar (`▰▰▰▱▱ 3/5`). Click `▸` to expand.
 - **Timeline**: bars on a time axis show what ran in parallel and for how long (`/flotilla timeline`, or press `t`).
-- **Status line**: `⠹ 3/5 agents · 1 task · ≈$0.43` shows whenever the session has agents, whichever view you use.
+- **Status line**: `● 3/5 agents · 1 task · ≈$0.43` shows whenever the session has agents, whichever view you use.
+- **Loaded check**: for a few seconds after a session starts, or after `/flotilla`, the band reads "Flotilla is on · nothing running" when nothing runs.
 
 Works in the terminal and in the Claude Code tab of the desktop app, in English or French.
 
