@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="372" viewBox="0 0 920 372" role="img" aria-labelledby="t d">
+  <title id="t">Flotilla preview</title>
+  <desc id="d">Claude Code with Flotilla showing four running subagents and a workflow group above the prompt, with a status line entry.</desc>
+  <style>
+    text { font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13.5px; fill: #d4d4d0; white-space: pre; }
+    .dim { fill: #8a8a85; }
+    .claude { fill: #d97757; }
+    .ok { fill: #6fbf73; }
+    .warn { fill: #e5b454; }
+    .explore { fill: #6ab0f3; }
+    .plan { fill: #4fc3a1; }
+    .wf { fill: #c58af9; }
+    .btn { fill: #d4d4d0; }
+    .b { font-weight: 700; }
+  </style>
+  <rect width="920" height="372" rx="12" fill="#1c1c1b"/>
+  <rect width="920" height="34" rx="12" fill="#2a2a28"/>
+  <rect y="22" width="920" height="12" fill="#2a2a28"/>
+  <circle cx="22" cy="17" r="6" fill="#ff5f57"/><circle cx="42" cy="17" r="6" fill="#febc2e"/><circle cx="62" cy="17" r="6" fill="#28c840"/>
+  <text x="460" y="22" text-anchor="middle" class="dim">claude — my-project</text>
+
+  <text x="24" y="66" class="dim">● I'll split this up: three agents to map the code, plus a review workflow.</text>
+
+  <text x="24" y="108"><tspan class="claude b">⠹ 3 agents</tspan>  <tspan class="dim">1 terminé · 184.2k tokens · ≈$0.31</tspan></text>
+  <text x="560" y="108" class="btn">[ Chronologie ] [ Panneau ] [ Réduire ]</text>
+
+  <text x="24" y="134"><tspan class="claude">⠼</tspan> <tspan class="explore b">Explore</tspan> <tspan class="dim">haiku</tspan> Map the auth module     <tspan class="dim">↳ Grep "useSession"</tspan>              <tspan class="claude">▁▃▅▃█▆▃▅▁▃▅▆</tspan>   <tspan class="dim">24s</tspan></text>
+  <text x="24" y="158"><tspan class="claude">⠴</tspan> <tspan class="claude b">general-purpose</tspan> <tspan class="dim">opus</tspan> Refactor API client <tspan class="dim">↳ Edit src/api/client.ts</tspan>         <tspan class="claude">▃▁▁▃▅▃▁▁▃▃▅▃</tspan>  <tspan class="dim">1m12</tspan></text>
+  <text x="24" y="182"><tspan class="dim">  └─</tspan> <tspan class="warn">⚠</tspan> <tspan class="explore b">Explore</tspan> <tspan class="dim">haiku</tspan> Find fetch usages  <tspan class="warn">⚠ aucune activité depuis 1m04</tspan>        <tspan class="dim">▃▁▁▁▁▁▁▁▁▁▁▁</tspan>  <tspan class="dim">1m31</tspan></text>
+  <text x="24" y="206"><tspan class="ok">✓</tspan> <tspan class="plan b">Plan</tspan> <tspan class="dim">sonnet</tspan> Migration plan v2       <tspan class="dim">9 outils · 61k tokens · $0.08 — Three phases, no downtime…</tspan>  <tspan class="dim">48s</tspan></text>
+  <text x="24" y="230"><tspan class="dim">▸</tspan> <tspan class="claude">⠦</tspan> <tspan class="wf b">workflow</tspan> review-changes                          <tspan class="claude">▰▰▰▰▰▱▱▱</tspan> <tspan class="dim">5/8 · ≈$0.12</tspan>        <tspan class="dim">2m03</tspan></text>
+
+  <rect x="16" y="252" width="888" height="40" rx="8" fill="none" stroke="#4a4a47"/>
+  <text x="32" y="277"><tspan class="claude">&gt;</tspan> <tspan class="dim">Ask Claude anything…</tspan></text>
+
+  <text x="24" y="322" class="dim">? for shortcuts</text>
+  <text x="896" y="322" text-anchor="end"><tspan class="claude">⠹</tspan> <tspan class="dim">3/5 agents · ≈$0.43</tspan></text>
+  <text x="24" y="352" class="dim">/flotilla  ·  /flotilla side  ·  /flotilla compact  ·  /flotilla timeline</text>
+</svg>

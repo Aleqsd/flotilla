@@ -1,0 +1,12 @@
+{
+  "name": "aleqs-mods",
+  "owner": { "name": "aleqsd", "url": "https://github.com/aleqsd" },
+  "metadata": { "description": "Claude Code mods by aleqsd" },
+  "plugins": [
+    {
+      "name": "flotilla",
+      "source": "./",
+      "description": "Your running subagents, live: above the prompt, in a side pane or on one line"
+    }
+  ]
+}

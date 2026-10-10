@@ -1,0 +1,11 @@
+{
+  "name": "flotilla",
+  "version": "1.0.0",
+  "description": "Your running subagents, live: above the prompt, in a side pane or on one line, with timeline, workflow groups, cost and stuck-agent alerts",
+  "author": { "name": "aleqsd", "url": "https://github.com/aleqsd" },
+  "homepage": "https://github.com/aleqsd/flotilla",
+  "repository": "https://github.com/aleqsd/flotilla",
+  "license": "MIT",
+  "keywords": ["agents", "subagents", "monitor", "dashboard", "workflow", "cost"],
+  "types": "./types/index.d.ts"
+}
