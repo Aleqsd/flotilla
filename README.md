@@ -2,7 +2,9 @@
 
 **Your Claude Code subagents and background tasks, live.** Flotilla is a Claude Code mod that shows every running agent and background task (what it is, what it's doing, how much it costs, and whether it's stuck) right above your prompt, in a side pane, or on a single line.
 
-![Flotilla showing running subagents above the Claude Code prompt](docs/preview.svg)
+![Flotilla tracking four Haiku subagents, a nested subagent and a background shell command above the Claude Code prompt](docs/demo.gif)
+
+*A real session, sped up 2×: four subagents, one of them spawning its own, plus a background `sleep`. Each row shows its tool, tokens, cost and the first sentence of its answer.*
 
 ## Features
 

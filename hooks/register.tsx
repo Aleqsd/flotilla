@@ -505,11 +505,14 @@ export const register: Register = (on, options) => {
     const head = headline(shown, frame, false)
     const onToggle = (runId: string) => void toggleRun($, runId)
 
-    if (where === 'above') {
+    const isTimeline = (await read($, layout)) === 'timeline'
+    const items = itemsOf(shown, await read($, workflowNames), await read($, openRuns))
+    const room = Math.max(1, e.props.maxRows - (isTimeline ? 2 : 1))
+    // A band too short to list the rows falls back to the one-line view.
+    const isCramped = items.length > room && room < 3
+
+    if (where === 'above' && !isCramped) {
       const ctx: Ctx = { frame, now, cols: e.props.bodyColumns }
-      const isTimeline = (await read($, layout)) === 'timeline'
-      const items = itemsOf(shown, await read($, workflowNames), await read($, openRuns))
-      const room = Math.max(1, e.props.maxRows - (isTimeline ? 2 : 1))
       const visible = items.length > room ? items.slice(0, room - 1) : items
       const hidden = items.length - visible.length
       const done = shown.filter(a => !isLive(a.status)).length
@@ -521,7 +524,7 @@ export const register: Register = (on, options) => {
             <Box flexDirection="row" gap={2}>
               <Text color={busy > 0 ? 'claude' : 'success'} bold>{head}</Text>
               <Text dimColor>
-                {t.done(done)} · {kilo(tokens)} tokens{cost ? ` · ${cost}` : ''}
+                {t.done(done)}{tokens > 0 ? ` · ${kilo(tokens)} tokens` : ''}{cost ? ` · ${cost}` : ''}
               </Text>
             </Box>
             <Box flexDirection="row" gap={1}>
@@ -542,13 +545,13 @@ export const register: Register = (on, options) => {
       )
     }
 
-    let room = e.props.bodyColumns - head.length - 14
+    let width = e.props.bodyColumns - head.length - 14
     const chips: { agent: FleetAgent; text: string }[] = []
     for (const a of [...shown].sort((x, y) => Number(isLive(y.status)) - Number(isLive(x.status)))) {
       const words = a.description.split(/\s+/).slice(0, 3).join(' ')
       const text = `${a.type} ${words} ${elapsed((a.endedAt ?? now) - a.startedAt)}`
-      if (text.length + 4 > room) break
-      room -= text.length + 4
+      if (text.length + 4 > width) break
+      width -= text.length + 4
       chips.push({ agent: a, text })
     }
     const hidden = shown.length - chips.length

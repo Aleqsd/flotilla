@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.1 (2026-10-10)
+
+Fixes found while recording the demo in a real session:
+
+- An agent whose turn ended while it still holds background work (a monitor, a subagent) reads "◌ waiting on its background work" instead of "starting…"
+- Between tools, an agent that already worked reads "thinking…" instead of "starting…"
+- The headline counts waiting agents (`● 1 agent · 1 waiting · 1 task`), uses the right plural, and no longer says "0 agent" over a list of tasks
+- A band too short to list the rows (3 lines or fewer) falls back to the one-line view instead of one row and "+5 more"
+- No "0 tokens" when only tasks are shown
+- The README shows a real recording (`docs/demo.gif`)
+
 ## 1.3.0 (2026-10-10)
 
 - For a few seconds after a session starts or after `/flotilla`, the band says "Flotilla is on · nothing running" when nothing runs, so you can see that it's loaded

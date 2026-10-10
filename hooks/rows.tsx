@@ -16,10 +16,15 @@ export function detail(a: FleetAgent, now: number): string {
     return isLive(a.status) ? `$ ${what}` : `${t.ended(a.status)} · $ ${what}`
   }
   if (isStuck(a, now)) return t.idleFor(elapsed(now - a.lastActivityAt))
+  // Its turn is over but it holds background work (a monitor, a subagent): say so.
+  if ((a.status === 'waiting' || a.status === 'idle') && a.inFlight === 0) return t.waitingOn
   if (isLive(a.status)) {
     const running = a.inFlight > 0 && now - a.lastActivityAt > 10_000 ? ` (${elapsed(now - a.lastActivityAt)})` : ''
 
-    return `↳ ${a.tool ?? t.starting}${a.target ? ` ${a.target}` : ''}${running}`
+    // Between tools (or after a turn, before the next) an agent that already worked is thinking.
+    if (a.tool === undefined) return `↳ ${a.tools === 0 ? t.starting : t.thinking}`
+
+    return `↳ ${a.tool}${a.target ? ` ${a.target}` : ''}${running}`
   }
   const cost = costOf(a)
   const counts = `${t.tools(a.tools)} · ${kilo(tokensOf(a.usage))} tokens${cost === undefined ? '' : ` · ${dollars(cost)}`}`
@@ -27,22 +32,27 @@ export function detail(a: FleetAgent, now: number): string {
   return a.summary ? `${counts} — ${a.summary}` : counts
 }
 
-// `⠋ 2 agents · 1 task`: running agents, then running tasks when there are any.
-// `glyph` is the spinner frame to draw, or undefined for a still dot.
+// `⠋ 2 agents · 1 waiting · 1 task`: running agents, agents waiting on their
+// own background work, then running tasks; each only when there are any.
+// `frame` is the spinner frame to draw, or undefined for a still dot.
 export function headline(list: FleetAgent[], frame: number | undefined, withTotal: boolean): string {
   const agents = list.filter(a => !isTask(a))
   const busyAgents = agents.filter(a => isBusy(a.status)).length
+  const waitingAgents = agents.filter(a => isLive(a.status) && !isBusy(a.status)).length
   const busyTasks = list.filter(a => isTask(a) && isBusy(a.status)).length
-  const isBusyNow = busyAgents + busyTasks > 0
+  const isBusyNow = busyAgents + waitingAgents + busyTasks > 0
   const glyph = !isBusyNow ? '✓' : frame === undefined ? '●' : SPINNER[frame % SPINNER.length]
-  const count = withTotal ? `${busyAgents}/${agents.length}` : String(busyAgents)
-  const agentPart = `${count} agent${(withTotal ? agents.length : busyAgents) > 1 ? 's' : ''}`
+  const agentPart = withTotal ? t.agents(agents.length).replace(/^\d+/, `${busyAgents}/${agents.length}`) : t.agents(busyAgents)
   const parts = [
-    ...(agents.length > 0 || busyTasks === 0 ? [agentPart] : []),
+    ...(busyAgents > 0 || (withTotal && agents.length > 0) ? [agentPart] : []),
+    ...(waitingAgents > 0 ? [t.waiting(waitingAgents)] : []),
     ...(busyTasks > 0 ? [t.tasks(busyTasks)] : []),
   ]
 
-  return `${glyph} ${parts.join(' · ')}`
+  const tasks = list.filter(a => isTask(a)).length
+  const idle = agents.length === 0 && tasks > 0 ? t.tasks(tasks) : t.agents(agents.length)
+
+  return `${glyph} ${parts.length > 0 ? parts.join(' · ') : idle}`
 }
 
 // Roots and workflow groups by start time, each followed by its children.

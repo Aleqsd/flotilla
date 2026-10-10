@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
+import type { FleetAgent } from '../types'
+import { detail, headline } from './rows'
 import { notified } from './tasks'
 
 const PANE_PROPS = {
@@ -242,6 +244,41 @@ describe('flotilla', () => {
     const later = await $.ui.mount({ plugin: 'flotilla', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
     expect(await later.find({ type: 'Text', text: 'Flotilla is on · nothing running' })).toBeUndefined()
     await later.unmount()
+  })
+
+  test('an agent waiting on its own background work says so, and the headline counts it', async () => {
+    const base = { tools: 3, activity: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, startedAt: 0, lastActivityAt: 0, inFlight: 0 }
+    const waiting: FleetAgent = { ...base, id: 'a1', type: 'general-purpose', description: 'Audit', status: 'waiting' }
+    const monitor: FleetAgent = { ...base, id: 'm1', kind: 'monitor', type: 'monitor', description: 'Watch', parentId: 'a1', status: 'running' }
+
+    expect(detail(waiting, 5_000)).toBe('◌ waiting on its background work')
+    expect(headline([waiting, monitor], undefined, false)).toBe('● 1 waiting · 1 task')
+    expect(headline([waiting, monitor], undefined, true)).toBe('● 0/1 agent · 1 waiting · 1 task')
+    expect(headline([], undefined, false)).toBe('✓ 0 agents')
+  })
+
+  test('a band too short for the rows falls back to the one-line view', { options: { language: 'en' } }, async ($, on) => {
+    mock.clock(on)
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('ui.close', () => ({ value: undefined }))
+    let next = 0
+    on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: `agent-${(next += 1)}` }))
+    for (const n of [1, 2, 3, 4]) {
+      await $.agent.spawn({ ...SPAWN, tool_use_id: `toolu_${n}`, description: `Task number ${n}`, subagentType: 'Explore' })
+    }
+
+    const short = await $.ui.mount({
+      plugin: 'flotilla', surface: 'terminal', component: 'AbovePrompt',
+      props: { ...BAND_PROPS, maxRows: 3, scroll: { offset: 0, bodyRows: 3 } },
+    })
+    expect(await short.find({ key: 'expand' })).toBeDefined()
+    expect(await short.find({ type: 'Text', text: /^4 agents$|^. 4 agents$/ })).toBeDefined()
+    await short.unmount()
+
+    const tall = await $.ui.mount({ plugin: 'flotilla', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    expect(await tall.find({ key: 'expand' })).toBeUndefined()
+    expect(await tall.find({ type: 'Text', text: /^Task number 4$/ })).toBeDefined()
+    await tall.unmount()
   })
 })
 
