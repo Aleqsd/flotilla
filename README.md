@@ -1,3 +1,5 @@
+<img src="assets/icon.png" alt="Flotilla icon: three sailboats" width="96" align="right">
+
 # Flotilla
 
 **Your Claude Code subagents and background tasks, live.** Flotilla is a Claude Code mod that shows every running agent and background task (what it is, what it's doing, how much it costs, and whether it's stuck) right above your prompt, in a side pane, or on a single line.

@@ -1,6 +1,7 @@
 {
   "name": "flotilla",
-  "version": "1.3.1",
+  "displayName": "Flotilla",
+  "version": "1.3.2",
   "description": "Your running subagents and background tasks, live: above the prompt, in a side pane or on one line, with timeline, workflow groups, cost and stuck-agent alerts",
   "author": {
     "name": "aleqsd",
@@ -8,6 +9,8 @@
   },
   "homepage": "https://github.com/aleqsd/flotilla",
   "repository": "https://github.com/aleqsd/flotilla",
+  "documentationUrl": "https://github.com/Aleqsd/flotilla#readme",
+  "supportUrl": "https://github.com/Aleqsd/flotilla/issues",
   "license": "MIT",
   "keywords": [
     "agents",
@@ -19,6 +22,7 @@
     "tasks",
     "workflow"
   ],
+  "icon": "./assets/icon.png",
   "userConfig": {
     "language": {
       "type": "string",

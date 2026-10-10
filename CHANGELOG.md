@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2 (2026-10-10)
+
+- Icon (`assets/icon.png`) and directory listing fields in `plugin.json`: `displayName`, `icon`, `documentationUrl`, `supportUrl`
+
 ## 1.3.1 (2026-10-10)
 
 Fixes found while recording the demo in a real session:
