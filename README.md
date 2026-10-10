@@ -79,7 +79,7 @@ Flotilla speaks English and French. Its `language` option takes one of these val
 Set it with `/flotilla lang fr`, from the `/config` menu, or in `settings.json`:
 
 ```json
-{ "pluginConfigs": { "flotilla": { "options": { "language": "fr" } } } }
+{ "pluginConfigs": { "flotilla@aleqs-mods": { "options": { "language": "fr" } } } }
 ```
 
 ## About the cost estimate
