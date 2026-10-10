@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 (2026-10-10)
+
+- Fix: in a narrow band, the agent type and model no longer shrink ("Expl", "hai") or wrap onto a second line; only the description and details give way
+
 ## 1.1.0 (2026-10-10)
 
 - English interface, alongside French

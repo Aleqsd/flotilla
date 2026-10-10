@@ -40,7 +40,7 @@ describe('flotilla', () => {
       })
       expect(await pane.find({ type: 'Text', text: /Map the auth module/ })).toBeDefined()
       expect(await pane.find({ type: 'Text', text: /1 actif/ })).toBeDefined()
-      expect(await pane.find({ type: 'Text', text: /^ haiku$/ })).toBeDefined()
+      expect(await pane.find({ type: 'Text', text: /^haiku$/ })).toBeDefined()
       await pane.press({ key: 'collapse' })
       await pane.unmount()
 

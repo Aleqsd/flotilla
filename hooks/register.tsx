@@ -303,25 +303,30 @@ function groupRow($: EngineInterface, el: El, g: Group, ctx: Ctx) {
   const mark = groupIcon(g.members, ctx.frame, ctx.now)
   const f = groupFacts(g, ctx.now)
 
+  // Fixed parts never shrink: only the name gives way to a narrow column.
   return (
     <Box key={`wf-${g.runId}`} flexDirection="row" gap={1}>
-      <Button
-        key={`wf-${g.runId}`}
-        label={g.isOpen ? '▾' : '▸'}
-        plain
-        onPress={() => toggleRun($, g.runId)}
-      />
-      <Text color={mark.color}>{mark.glyph}</Text>
-      <Text color="merged" bold>workflow</Text>
+      <Box flexShrink={0} flexDirection="row" gap={1}>
+        <Button
+          key={`wf-${g.runId}`}
+          label={g.isOpen ? '▾' : '▸'}
+          plain
+          onPress={() => toggleRun($, g.runId)}
+        />
+        <Text color={mark.color}>{mark.glyph}</Text>
+        <Text color="merged" bold>workflow</Text>
+      </Box>
       <Box flexGrow={1} flexShrink={1}>
         <Text wrap="truncate-end">{g.name}</Text>
       </Box>
-      <Text color={f.done === f.total ? 'success' : 'claude'}>{progress(f.done, f.total)}</Text>
-      <Text dimColor>
-        {f.done}/{f.total}{f.cost ? ` · ${f.cost}` : ''}
-      </Text>
-      <Box width={6} justifyContent="flex-end">
-        <Text dimColor>{elapsed(f.end - f.start)}</Text>
+      <Box flexShrink={0} flexDirection="row" gap={1}>
+        <Text color={f.done === f.total ? 'success' : 'claude'}>{progress(f.done, f.total)}</Text>
+        <Text dimColor>
+          {f.done}/{f.total}{f.cost ? ` · ${f.cost}` : ''}
+        </Text>
+        <Box width={6} justifyContent="flex-end">
+          <Text dimColor>{elapsed(f.end - f.start)}</Text>
+        </Box>
       </Box>
     </Box>
   )
@@ -337,22 +342,29 @@ function paneRow(el: El, a: FleetAgent, depth: number, ctx: Ctx) {
 
   return (
     <Box key={a.id} flexDirection="row" gap={1}>
-      <Text color={mark.color}>{mark.glyph}</Text>
+      <Box flexShrink={0}>
+        <Text color={mark.color}>{mark.glyph}</Text>
+      </Box>
       <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-        <Box flexDirection="row">
-          <Text dimColor>{indent}</Text>
-          <Text color={TYPE_COLORS[a.type] ?? 'remember'} bold>{a.type}</Text>
-          {model !== undefined && <Text dimColor> {model}</Text>}
-          <Text> </Text>
-          <Text dimColor={!live} wrap="truncate-end">{a.description}</Text>
+        <Box flexDirection="row" gap={1}>
+          <Box flexShrink={0} flexDirection="row" gap={1}>
+            {indent !== '' && <Text dimColor>{indent.trimEnd()}</Text>}
+            <Text color={TYPE_COLORS[a.type] ?? 'remember'} bold>{a.type}</Text>
+            {model !== undefined && <Text dimColor>{model}</Text>}
+          </Box>
+          <Box flexShrink={1}>
+            <Text dimColor={!live} wrap="truncate-end">{a.description}</Text>
+          </Box>
         </Box>
         <Text color={isStuck(a, ctx.now) ? 'warning' : undefined} dimColor={!isStuck(a, ctx.now)} wrap="truncate-end">
           {' '.repeat(indent.length)}{detail(a, ctx.now)}
         </Text>
       </Box>
-      {ctx.cols >= 52 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{spark(a.activity)}</Text>}
-      <Box width={6} justifyContent="flex-end">
-        <Text dimColor>{elapsed((a.endedAt ?? ctx.now) - a.startedAt)}</Text>
+      <Box flexShrink={0} flexDirection="row" gap={1}>
+        {ctx.cols >= 52 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{spark(a.activity)}</Text>}
+        <Box width={6} justifyContent="flex-end">
+          <Text dimColor>{elapsed((a.endedAt ?? ctx.now) - a.startedAt)}</Text>
+        </Box>
       </Box>
     </Box>
   )
@@ -367,11 +379,13 @@ function lineRow(el: El, a: FleetAgent, depth: number, ctx: Ctx) {
 
   return (
     <Box key={a.id} flexDirection="row" gap={1}>
-      <Text color={mark.color}>{mark.glyph}</Text>
-      {depth > 0 && <Text dimColor>{`${'   '.repeat(depth - 1)}└─`}</Text>}
-      <Text color={TYPE_COLORS[a.type] ?? 'remember'} bold>{a.type}</Text>
-      {model !== undefined && <Text dimColor>{model}</Text>}
-      <Box width={Math.max(12, Math.floor(ctx.cols * 0.28))}>
+      <Box flexShrink={0} flexDirection="row" gap={1}>
+        <Text color={mark.color}>{mark.glyph}</Text>
+        {depth > 0 && <Text dimColor>{`${'   '.repeat(depth - 1)}└─`}</Text>}
+        <Text color={TYPE_COLORS[a.type] ?? 'remember'} bold>{a.type}</Text>
+        {model !== undefined && <Text dimColor>{model}</Text>}
+      </Box>
+      <Box width={Math.max(12, Math.floor(ctx.cols * 0.28))} flexShrink={1}>
         <Text dimColor={!live} wrap="truncate-end">{a.description}</Text>
       </Box>
       <Box flexGrow={1} flexShrink={1}>
@@ -379,9 +393,11 @@ function lineRow(el: El, a: FleetAgent, depth: number, ctx: Ctx) {
           {detail(a, ctx.now)}
         </Text>
       </Box>
-      {ctx.cols >= 90 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{spark(a.activity)}</Text>}
-      <Box width={6} justifyContent="flex-end">
-        <Text dimColor>{elapsed((a.endedAt ?? ctx.now) - a.startedAt)}</Text>
+      <Box flexShrink={0} flexDirection="row" gap={1}>
+        {ctx.cols >= 90 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{spark(a.activity)}</Text>}
+        <Box width={6} justifyContent="flex-end">
+          <Text dimColor>{elapsed((a.endedAt ?? ctx.now) - a.startedAt)}</Text>
+        </Box>
       </Box>
     </Box>
   )
