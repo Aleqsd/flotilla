@@ -1,7 +1,7 @@
 {
   "name": "flotilla",
-  "version": "1.1.2",
-  "description": "Your running subagents, live: above the prompt, in a side pane or on one line, with timeline, workflow groups, cost and stuck-agent alerts",
+  "version": "1.2.0",
+  "description": "Your running subagents and background tasks, live: above the prompt, in a side pane or on one line, with timeline, workflow groups, cost and stuck-agent alerts",
   "author": {
     "name": "aleqsd",
     "url": "https://github.com/aleqsd"
@@ -11,11 +11,13 @@
   "license": "MIT",
   "keywords": [
     "agents",
-    "subagents",
-    "monitor",
+    "background",
+    "cost",
     "dashboard",
-    "workflow",
-    "cost"
+    "monitor",
+    "subagents",
+    "tasks",
+    "workflow"
   ],
   "userConfig": {
     "language": {

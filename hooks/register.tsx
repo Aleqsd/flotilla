@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { AgentSpawnInput, AgentStatus, Color, ElementTable, EngineInterface, Register } from 'claude-code'
 
-import type { FleetAgent, FleetUsage, FleetView, FleetWorkflowName } from '../types'
+import type { FleetAgent, FleetKind, FleetUsage, FleetView, FleetWorkflowName } from '../types'
 
 const PANE = 'flotilla'
 const TITLE = 'Flotilla'
@@ -34,15 +34,21 @@ const TYPE_COLORS: Record<string, Color> = {
   'general-purpose': 'claude',
   fork: 'merged',
   teammate: 'autoAccept',
+  shell: 'bashBorder',
+  monitor: 'permission',
 }
+
+// Tools whose result names a background task, and the kind of task it is.
+const TASK_TOOLS: Record<string, Exclude<FleetKind, 'agent'>> = { Bash: 'shell', PowerShell: 'shell', Monitor: 'monitor' }
 
 // ---- Status -------------------------------------------------------------
 
 const isLive = (s: AgentStatus) =>
   s === 'pending' || s === 'running' || s === 'waiting' || s === 'idle'
 const isBusy = (s: AgentStatus) => s === 'pending' || s === 'running'
+const isTask = (a: FleetAgent) => a.kind !== undefined && a.kind !== 'agent'
 const isStuck = (a: FleetAgent, now: number) =>
-  a.status === 'running' && a.inFlight === 0 && now - a.lastActivityAt > STUCK_MS
+  !isTask(a) && a.status === 'running' && a.inFlight === 0 && now - a.lastActivityAt > STUCK_MS
 
 function icon(a: FleetAgent, frame: number, now: number): { glyph: string; color: Color } {
   if (isStuck(a, now)) return { glyph: '⚠', color: 'warning' }
@@ -88,7 +94,9 @@ const STRINGS = {
     hideDone: 'Hide done',
     showDone: 'Show done',
     clear: 'Clear',
-    noneRunning: "No subagent is running right now. Flotilla shows up as soon as one starts; background shell commands aren't tracked.",
+    noneRunning: 'Nothing is running right now. Flotilla shows up as soon as an agent or a background task starts.',
+    tasks: (n: number) => `${n} task${n === 1 ? '' : 's'}`,
+    ended: (status: string) => ({ completed: 'done', failed: 'failed', killed: 'stopped' })[status] ?? status,
   },
   fr: {
     active: (n: number) => `${n} actif${n > 1 ? 's' : ''}`,
@@ -110,7 +118,9 @@ const STRINGS = {
     hideDone: 'Masquer terminés',
     showDone: 'Afficher terminés',
     clear: 'Vider',
-    noneRunning: "Aucun sous-agent ne tourne pour l'instant. Flotilla apparaît dès qu'un agent démarre ; les commandes shell en arrière-plan ne sont pas suivies.",
+    noneRunning: "Rien ne tourne pour l'instant. Flotilla apparaît dès qu'un agent ou une tâche en arrière-plan démarre.",
+    tasks: (n: number) => `${n} tâche${n > 1 ? 's' : ''}`,
+    ended: (status: string) => ({ completed: 'terminée', failed: 'échouée', killed: 'arrêtée' })[status] ?? status,
   },
 }
 
@@ -233,7 +243,8 @@ function dollars(n: number | undefined): string {
   return `$${n.toFixed(2)}`
 }
 
-function totals(list: FleetAgent[]): { tokens: number; cost: string } {
+function totals(all: FleetAgent[]): { tokens: number; cost: string } {
+  const list = all.filter(a => !isTask(a))
   const costs = list.map(costOf)
   const known = costs.filter((c): c is number => c !== undefined)
   const sum = known.reduce((s, c) => s + c, 0)
@@ -245,6 +256,11 @@ function totals(list: FleetAgent[]): { tokens: number; cost: string } {
 // ---- Rows ---------------------------------------------------------------
 
 function detail(a: FleetAgent, now: number): string {
+  if (isTask(a)) {
+    const what = a.target ?? a.description
+
+    return isLive(a.status) ? `$ ${what}` : `${t.ended(a.status)} · $ ${what}`
+  }
   if (isStuck(a, now)) return t.idleFor(elapsed(now - a.lastActivityAt))
   if (isLive(a.status)) {
     const running = a.inFlight > 0 && now - a.lastActivityAt > 10_000 ? ` (${elapsed(now - a.lastActivityAt)})` : ''
@@ -369,7 +385,7 @@ function paneRow(el: El, a: FleetAgent, depth: number, ctx: Ctx) {
         </Text>
       </Box>
       <Box flexShrink={0} flexDirection="row" gap={1}>
-        {ctx.cols >= 52 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{spark(a.activity)}</Text>}
+        {ctx.cols >= 52 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{isTask(a) ? ' '.repeat(SPARK) : spark(a.activity)}</Text>}
         <Box width={6} justifyContent="flex-end">
           <Text dimColor>{elapsed((a.endedAt ?? ctx.now) - a.startedAt)}</Text>
         </Box>
@@ -402,7 +418,7 @@ function lineRow(el: El, a: FleetAgent, depth: number, ctx: Ctx) {
         </Text>
       </Box>
       <Box flexShrink={0} flexDirection="row" gap={1}>
-        {ctx.cols >= 90 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{spark(a.activity)}</Text>}
+        {ctx.cols >= 90 && <Text color={isBusy(a.status) ? 'claude' : 'inactive'}>{isTask(a) ? ' '.repeat(SPARK) : spark(a.activity)}</Text>}
         <Box width={6} justifyContent="flex-end">
           <Text dimColor>{elapsed((a.endedAt ?? ctx.now) - a.startedAt)}</Text>
         </Box>
@@ -559,6 +575,22 @@ async function reconcile($: EngineInterface, now: number) {
   })
 }
 
+// `⠋ 2 agents · 1 task`: running agents, then running tasks when there are any.
+function headline(list: FleetAgent[], frame: number, withTotal: boolean): string {
+  const agents = list.filter(a => !isTask(a))
+  const busyAgents = agents.filter(a => isBusy(a.status)).length
+  const busyTasks = list.filter(a => isTask(a) && isBusy(a.status)).length
+  const glyph = busyAgents + busyTasks > 0 ? SPINNER[frame % SPINNER.length] : '✓'
+  const count = withTotal ? `${busyAgents}/${agents.length}` : String(busyAgents)
+  const agentPart = `${count} agent${(withTotal ? agents.length : busyAgents) > 1 ? 's' : ''}`
+  const parts = [
+    ...(agents.length > 0 || busyTasks === 0 ? [agentPart] : []),
+    ...(busyTasks > 0 ? [t.tasks(busyTasks)] : []),
+  ]
+
+  return `${glyph} ${parts.join(' · ')}`
+}
+
 let ticks = 0
 let lastStatus: string | undefined
 
@@ -568,12 +600,9 @@ async function tick($: EngineInterface) {
   if (ticks % 8 === 1) await reconcile($, now)
 
   const list = await read($, fleet)
-  const busy = list.filter(a => isBusy(a.status)).length
   const { cost } = totals(list)
   const { frame } = await read($, clock)
-  const status = list.length === 0
-    ? undefined
-    : `${busy > 0 ? SPINNER[frame % SPINNER.length] : '✓'} ${busy}/${list.length} agents${cost ? ` · ${cost}` : ''}`
+  const status = list.length === 0 ? undefined : `${headline(list, frame, true)}${cost ? ` · ${cost}` : ''}`
   if (status !== lastStatus) {
     lastStatus = status
     $.ui.status(status)
@@ -681,6 +710,84 @@ type FleetUsageInput = {
   cache_creation_input_tokens: number
 }
 
+// ---- Background tasks ---------------------------------------------------
+
+const oneLine = (text: string) => {
+  const flat = text.replace(/\s+/g, ' ').trim()
+
+  return flat.length > 80 ? `${flat.slice(0, 79)}…` : flat
+}
+
+async function taskStarted($: EngineInterface, kind: Exclude<FleetKind, 'agent'>, input: unknown, output: unknown, parentId: string | undefined) {
+  const out = (output ?? {}) as Record<string, unknown>
+  const id = typeof out.backgroundTaskId === 'string' ? out.backgroundTaskId
+    : kind === 'monitor' && typeof out.taskId === 'string' ? out.taskId
+    : undefined
+  if (id === undefined) return
+  const fields = input as Record<string, unknown>
+  const command = typeof fields.command === 'string' && fields.command !== '' ? oneLine(fields.command) : undefined
+  const description = typeof fields.description === 'string' && fields.description !== '' ? fields.description : (command ?? kind)
+  const now = await $.clock.now()
+  const row: FleetAgent = {
+    id, kind, type: kind, description, parentId, target: command,
+    startedAt: now, lastActivityAt: now, inFlight: 0, status: 'running',
+    tools: 0, activity: [], usage: ZERO,
+  }
+  await update($, fleet, list => [...list.filter(a => a.id !== id), row].slice(-MAX_ROWS))
+  await update($, clock, c => ({ frame: c.frame, now }))
+}
+
+async function tasksEnded($: EngineInterface, ended: { id: string; status: AgentStatus }[]) {
+  if (ended.length === 0) return
+  const now = await $.clock.now()
+  await update($, fleet, list => list.map(a => {
+    const end = ended.find(x => x.id === a.id)
+
+    return end !== undefined && isTask(a) && isLive(a.status) ? { ...a, status: end.status, endedAt: now } : a
+  }))
+}
+
+// A task notification names its task and how it ended:
+// <task-id>…</task-id> … <status>completed|failed|killed</status>.
+function notified(text: string): { id: string; status: AgentStatus }[] {
+  const out: { id: string; status: AgentStatus }[] = []
+  for (const block of text.split(/<\/task-notification>/)) {
+    const id = /<task-id>\s*([^<\s]+)\s*<\/task-id>/.exec(block)?.[1]
+    if (id === undefined) continue
+    const word = /<status>\s*([a-z_]+)\s*<\/status>/i.exec(block)?.[1]?.toLowerCase() ?? 'completed'
+    const status: AgentStatus = word === 'failed' || word === 'error' ? 'failed' : word === 'killed' || word === 'stopped' ? 'killed' : 'completed'
+    out.push({ id, status })
+  }
+
+  return out
+}
+
+type InFlight = { id: string; type: string; status: string; description: string; command?: string }
+
+// At each turn's end the engine lists the background work still in flight:
+// tracked tasks missing from it have ended; shells and monitors we never saw start are added.
+async function syncTasks($: EngineInterface, inFlight: readonly InFlight[]) {
+  const now = await $.clock.now()
+  const ids = new Set(inFlight.map(x => x.id))
+  await update($, fleet, list => {
+    const known = new Set(list.map(a => a.id))
+    const ended = list.map(a => (isTask(a) && isLive(a.status) && !ids.has(a.id) ? { ...a, status: 'completed' as const, endedAt: now } : a))
+    const added: FleetAgent[] = inFlight
+      .filter(x => (x.type === 'shell' || x.type === 'monitor') && !known.has(x.id))
+      .map(x => ({
+        id: x.id,
+        kind: x.type === 'shell' ? 'shell' : 'monitor',
+        type: x.type,
+        description: x.description || x.command || x.type,
+        target: x.command === undefined ? undefined : oneLine(x.command),
+        startedAt: now, lastActivityAt: now, inFlight: 0, status: 'running',
+        tools: 0, activity: [], usage: ZERO,
+      }))
+
+    return [...ended, ...added].slice(-MAX_ROWS)
+  })
+}
+
 // ---- Hooks --------------------------------------------------------------
 
 export const register: Register = (on, options) => {
@@ -747,16 +854,38 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('tool.call', async ($, e, next) => {
-    if ((e.tool as string) === 'Workflow') await noteWorkflow($, e.tool_use_id, e).catch(() => undefined)
+    const tool = e.tool as string
+    if (tool === 'Workflow') await noteWorkflow($, e.tool_use_id, e).catch(() => undefined)
     const agentId = e.agentId
-    if (agentId === undefined) return next(e)
+    const taskKind = TASK_TOOLS[tool]
+    if (agentId === undefined && taskKind === undefined && tool !== 'TaskStop') return next(e)
 
-    await toolStarted($, agentId, e.tool, targetOf(e)).catch(() => undefined)
+    if (agentId !== undefined) await toolStarted($, agentId, e.tool, targetOf(e)).catch(() => undefined)
     try {
-      return await next(e)
+      const ran = await next(e)
+      const output = (ran as { result?: unknown }).result
+      if (taskKind !== undefined) await taskStarted($, taskKind, e, output, agentId).catch(() => undefined)
+      if (tool === 'TaskStop') {
+        const stopped = (output as { task_id?: unknown } | undefined)?.task_id
+        if (typeof stopped === 'string') await tasksEnded($, [{ id: stopped, status: 'killed' }]).catch(() => undefined)
+      }
+
+      return ran
     } finally {
-      void toolEnded($, agentId).catch(() => undefined)
+      if (agentId !== undefined) void toolEnded($, agentId).catch(() => undefined)
     }
+  }).catch(($, e, next) => next(e))
+
+  on('prompt.submit', ($, e, next) => {
+    if (e.origin.kind === 'task-notification') void tasksEnded($, notified(e.text)).catch(() => undefined)
+
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('classic.Stop', async ($, e, next) => {
+    await syncTasks($, e.background_tasks ?? []).catch(() => undefined)
+
+    return next(e)
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
@@ -845,7 +974,7 @@ export const register: Register = (on, options) => {
     const el = $.ui.resolve(e)
     const { Box, Text, Button } = el
     const busy = shown.filter(a => isBusy(a.status)).length
-    const head = `${busy > 0 ? SPINNER[frame % SPINNER.length] : '✓'} ${busy} agent${busy > 1 ? 's' : ''}`
+    const head = headline(shown, frame, false)
 
     if (where === 'above') {
       const ctx: Ctx = { frame, now, cols: e.props.bodyColumns }

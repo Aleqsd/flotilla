@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 (2026-10-10)
+
+- Background tasks show up next to the agents: background shell commands (`Bash`/`PowerShell`, Ctrl+B included) and `Monitor` watches, with their command and running time
+- Tasks end on `TaskStop`, on their task notification, or when the turn-end list of background work no longer has them; tasks started before Flotilla loaded are picked up there
+- Tasks started by a subagent are nested under it
+- The band and status line count running tasks (`⠋ 2 agents · 1 task`)
+
 ## 1.1.2 (2026-10-10)
 
 - `/flotilla` says so when no subagent is running, and that background shell commands aren't tracked, instead of announcing a view that stays empty

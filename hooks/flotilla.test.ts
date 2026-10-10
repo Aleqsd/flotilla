@@ -149,4 +149,45 @@ describe('flotilla', () => {
     expect(await above.find({ key: 'collapse', text: 'Collapse' })).toBeDefined()
     await above.unmount()
   })
+
+  test('a background shell shows as a task, and ends when the turn says it is gone', { options: { language: 'en' } }, async ($, on) => {
+    mock.clock(on)
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('ui.close', () => ({ value: undefined }))
+    on('classic.Stop', () => ({}))
+    on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'bash_1' } }))
+    await $.tool.call({ tool: 'Bash', command: 'npm test -- --watch', description: 'Run the test watcher', run_in_background: true })
+
+    const above = await $.ui.mount({ plugin: 'flotilla', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+    expect(await above.find({ type: 'Text', text: /^shell$/ })).toBeDefined()
+    expect(await above.find({ type: 'Text', text: /^Run the test watcher$/ })).toBeDefined()
+    expect(await above.find({ type: 'Text', text: /^. 1 task$/ })).toBeDefined()
+    await above.unmount()
+
+    await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
+    const pane = await $.ui.mount({
+      plugin: 'flotilla', surface: 'terminal', component: 'Pane', requestId: 'flotilla', props: PANE_PROPS,
+    })
+    expect(await pane.find({ type: 'Text', text: /done · \$ npm test -- --watch/ })).toBeDefined()
+    await pane.unmount()
+  })
+
+  test('tasks still in flight at a turn end are picked up', { options: { language: 'fr' } }, async ($, on) => {
+    mock.clock(on)
+    on('ui.open', () => ({ value: { isPlaced: true } }))
+    on('ui.close', () => ({ value: undefined }))
+    on('classic.Stop', () => ({}))
+    await $.classic.Stop({
+      stop_hook_active: false,
+      background_tasks: [{ id: 'mon_7', type: 'monitor', status: 'running', description: 'Watch the deploy', command: 'kubectl rollout status' }],
+    })
+
+    const pane = await $.ui.mount({
+      plugin: 'flotilla', surface: 'desktop', component: 'Pane', requestId: 'flotilla', props: PANE_PROPS,
+    })
+    expect(await pane.find({ type: 'Text', text: /^Watch the deploy$/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /^\$ kubectl rollout status$/ })).toBeDefined()
+    await pane.unmount()
+  })
 })
+

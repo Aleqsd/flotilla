@@ -3,8 +3,13 @@ export type FleetStatus = 'pending' | 'running' | 'waiting' | 'idle' | 'complete
 /** Token counts as the API reports them, summed over the agent's turns. */
 export type FleetUsage = { input: number; output: number; cacheRead: number; cacheWrite: number }
 
+/** What a row tracks: a subagent, or a background task (shell command, monitor). */
+export type FleetKind = 'agent' | 'shell' | 'monitor'
+
 export type FleetAgent = {
   id: string
+  /** Absent on rows written before tasks were tracked: an agent. */
+  kind?: FleetKind
   type: string
   description: string
   parentId?: string

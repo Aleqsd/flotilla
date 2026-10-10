@@ -1,6 +1,6 @@
 # Flotilla
 
-**Your Claude Code subagents, live.** Flotilla is a Claude Code mod that shows every running agent (what it is, what it's doing, how much it costs, and whether it's stuck) right above your prompt, in a side pane, or on a single line.
+**Your Claude Code subagents and background tasks, live.** Flotilla is a Claude Code mod that shows every running agent and background task (what it is, what it's doing, how much it costs, and whether it's stuck) right above your prompt, in a side pane, or on a single line.
 
 ![Flotilla showing running subagents above the Claude Code prompt](docs/preview.svg)
 
@@ -9,13 +9,14 @@
 - **Live list above the prompt** (default): one row per agent with a spinner, type, model, current tool and target, an activity sparkline, and elapsed time. It disappears 15 s after the last agent finishes.
 - **Side pane**: a two-line-per-agent view docked next to the transcript (`/flotilla side`).
 - **Compact mode**: everything on one line (`/flotilla compact`).
-- **Agent tree**: agents spawned by other agents are nested under their parent.
+- **Background tasks**: shell commands run in the background (`Bash`/`PowerShell`, including the ones you push there with Ctrl+B) and `Monitor` watches show up next to the agents. Each one shows its command and how long it's been running, and is marked done, failed or stopped when it ends.
+- **Agent tree**: agents spawned by other agents are nested under their parent, and so are the background tasks they start.
 - **Stuck-agent alert**: a running agent that hasn't called a tool in 60 s turns orange with `⚠`. A long tool call in flight, such as a slow test run, isn't flagged; its row shows how long it's been running.
 - **Results at a glance**: finished agents show the first sentence of their final answer.
 - **Model and cost**: a `haiku` / `sonnet` / `opus` / `fable` badge per agent, plus an estimated cost per agent and in total.
 - **Workflow groups**: agents started by one workflow collapse into a single row with a progress bar (`▰▰▰▱▱ 3/5`). Click `▸` to expand.
 - **Timeline**: bars on a time axis show what ran in parallel and for how long (`/flotilla timeline`, or press `t`).
-- **Status line**: `⠹ 3/5 agents · ≈$0.43` shows whenever the session has agents, whichever view you use.
+- **Status line**: `⠹ 3/5 agents · 1 task · ≈$0.43` shows whenever the session has agents, whichever view you use.
 
 Works in the terminal and in the Claude Code tab of the desktop app, in English or French.
 
@@ -102,6 +103,7 @@ Flotilla is a plugin of function hooks (`hooks/register.tsx`):
 - `tool.call` tracks the current tool, call counts, activity and tools still running.
 - `turn.complete` marks an agent done and records its answer and token usage.
 - `$.agent.list()` is polled every 2 s to sync statuses and pick up agents started before the mod loaded.
+- Background tasks are picked up from the tool result (`backgroundTaskId`, a Monitor's `taskId`). They end on a `TaskStop`, on their task notification, or when they no longer appear in the background work the engine lists at the end of each turn (`classic.Stop`).
 - `ui.render` draws the `AbovePrompt` band and the `Pane`, and `$.ui.status` drives the status line.
 
 Everything lives in session state. Nothing is written to disk or sent anywhere.
