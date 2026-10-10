@@ -1,6 +1,6 @@
 {
   "name": "flotilla",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Your running subagents, live: above the prompt, in a side pane or on one line, with timeline, workflow groups, cost and stuck-agent alerts",
   "author": {
     "name": "aleqsd",

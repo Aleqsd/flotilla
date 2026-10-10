@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2 (2026-10-10)
+
+- `/flotilla` says so when no subagent is running, and that background shell commands aren't tracked, instead of announcing a view that stays empty
+
 ## 1.1.1 (2026-10-10)
 
 - Fix: in a narrow band, the agent type and model no longer shrink ("Expl", "hai") or wrap onto a second line; only the description and details give way

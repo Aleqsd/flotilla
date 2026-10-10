@@ -88,6 +88,7 @@ const STRINGS = {
     hideDone: 'Hide done',
     showDone: 'Show done',
     clear: 'Clear',
+    noneRunning: "No subagent is running right now. Flotilla shows up as soon as one starts; background shell commands aren't tracked.",
   },
   fr: {
     active: (n: number) => `${n} actif${n > 1 ? 's' : ''}`,
@@ -109,6 +110,7 @@ const STRINGS = {
     hideDone: 'Masquer terminés',
     showDone: 'Afficher terminés',
     clear: 'Vider',
+    noneRunning: "Aucun sous-agent ne tourne pour l'instant. Flotilla apparaît dès qu'un agent démarre ; les commandes shell en arrière-plan ne sont pas suivies.",
   },
 }
 
@@ -128,6 +130,12 @@ async function detectLang($: EngineInterface): Promise<Lang> {
     ?? (await $.env.get('LANG').catch(() => undefined))
 
   return asLang(locale) ?? 'en'
+}
+
+// Said after a view change while nothing is running, so an empty band isn't a mystery.
+async function quietNote($: EngineInterface) {
+  return (await read($, fleet)).some(a => isLive(a.status)) ? '' : `
+${t.noneRunning}`
 }
 
 async function setLanguage($: EngineInterface, value: string) {
@@ -721,11 +729,11 @@ export const register: Register = (on, options) => {
     if (arg === 'compact' || arg === 'band') {
       await showIn($, 'compact')
 
-      return { text: 'Flotilla shown on one line above the prompt.' }
+      return { text: `Flotilla shown on one line above the prompt.${await quietNote($)}` }
     }
     await showIn($, 'above')
 
-    return { text: 'Flotilla shown above the prompt.' }
+    return { text: `Flotilla shown above the prompt.${await quietNote($)}` }
   })
 
   on('agent.spawn', async ($, e, next) => {
